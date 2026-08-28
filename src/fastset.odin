@@ -136,7 +136,6 @@ create_drawable_surface :: proc(info: VFSInstanceCreateInfo, instance: vk.Instan
 get_physical_devices :: proc(instance: vk.Instance, alloc := context.allocator) -> ([]vk.PhysicalDevice, u32) {
 	count: u32
 	vk.EnumeratePhysicalDevices(instance, &count, nil)
-	if count == 0 do fmt.panicf("No physical devices found.")
 
 	devices := make([]vk.PhysicalDevice, count, alloc)
 	vk.EnumeratePhysicalDevices(instance, &count, raw_data(devices))
@@ -151,18 +150,18 @@ get_physical_device_info :: proc(device: vk.PhysicalDevice) -> PhysicalDeviceInf
 	vk13_features := vk.PhysicalDeviceVulkan13Features{sType = .PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, pNext = &vk12_features}
 	vk14_features := vk.PhysicalDeviceVulkan14Features{sType = .PHYSICAL_DEVICE_VULKAN_1_4_FEATURES, pNext = &vk13_features}
 
-	props := vk.PhysicalDeviceProperties2{
-		sType = .PHYSICAL_DEVICE_PROPERTIES_2,
+	props: vk.PhysicalDeviceProperties
+
+	features := vk.PhysicalDeviceFeatures2{
+		sType = .PHYSICAL_DEVICE_FEATURES_2,
 		pNext = &vk14_features,
 	}
-
-	features: vk.PhysicalDeviceFeatures
-	vk.GetPhysicalDeviceProperties2(device, &props)
-	vk.GetPhysicalDeviceFeatures(device, &features)
+	vk.GetPhysicalDeviceProperties(device, &props)
+	vk.GetPhysicalDeviceFeatures2(device, &features)
 
 	physical_device_info := PhysicalDeviceInfo{
-		properties = props.properties,
-		features = features,
+		properties = props,
+		features = features.features,
 		vk11_features = vk11_features,
 		vk12_features = vk12_features,
 		vk13_features = vk13_features,
@@ -248,23 +247,17 @@ validate_memory_size :: proc(physical_device: vk.PhysicalDevice, memory_size: vk
 }
 
 @(private="file")
-validate_vk11_features :: proc(request_features, avail_features: vk.PhysicalDeviceVulkan11Features) -> bool {
-	return true
-}
+validate_present_support :: proc(physical_device: vk.PhysicalDevice, surface: vk.SurfaceKHR) -> bool {
+	count: u32
+	vk.GetPhysicalDeviceQueueFamilyProperties(physical_device, &count, nil)
 
-@(private="file")
-validate_vk12_features :: proc(request_features, avail_features: vk.PhysicalDeviceVulkan12Features) -> bool {
-	return true
-}
+	for i in 0..<count {
+		supported: b32
+		vk.GetPhysicalDeviceSurfaceSupportKHR(physical_device, i, surface, &supported)
+		if supported do return true
+	}
 
-@(private="file")
-validate_vk13_features :: proc(request_features, avail_features: vk.PhysicalDeviceVulkan13Features) -> bool {
-	return true
-}
-
-@(private="file")
-validate_vk14_features :: proc(request_features, avail_features: vk.PhysicalDeviceVulkan14Features) -> bool {
-	return true
+	return false
 }
 
 VFSInstance :: struct {
@@ -272,8 +265,6 @@ VFSInstance :: struct {
 	instance: vk.Instance,
 	window: glfw.WindowHandle,
 	surface: vk.SurfaceKHR,
-	physical_device: vk.PhysicalDevice,
-	logical_device: vk.Device,
 }
 
 VFSInstanceCreateInfo :: struct {
@@ -305,7 +296,8 @@ create_instance :: proc(info: VFSInstanceCreateInfo) -> VFSInstance {
 	if info.enable_extensions != nil {
 		required_extension_props = concat(info.enable_extensions, glfw_extensions)
 	} else {
-		required_extension_props = glfw_extensions
+		required_extension_props = make([]cstring, glfw_extensions_count)
+		copy(required_extension_props, glfw_extensions)
 	}
 
 	defer {
@@ -366,21 +358,21 @@ DesireQueueFamily :: enum {
 
 VFSSelectPhysicalDeviceInfo :: struct {
 	surface: vk.SurfaceKHR,
-	defer_surface_init: b32,
 
 	desire_queue_families: DesireQueueFamilies,
 	prefer_device_type: vk.PhysicalDeviceType,
-	require_present_capability: b32,
+	require_present_support: b32,
 	require_device_memory_size: vk.DeviceSize,
 	minimum_vulkan_version: u32,
 
-	require_vulkan_11_features: vk.PhysicalDeviceVulkan11Features,
-	require_vulkan_12_features: vk.PhysicalDeviceVulkan12Features,
-	require_vulkan_13_features: vk.PhysicalDeviceVulkan13Features,
-	require_vulkan_14_features: vk.PhysicalDeviceVulkan14Features,
+	require_vulkan_11_features: Vulkan11Features,
+	require_vulkan_12_features: Vulkan12Features,
+	require_vulkan_13_features: Vulkan13Features,
+	require_vulkan_14_features: Vulkan14Features,
 }
 
 select_physical_device :: proc(ctx: VFSInstance, info: VFSSelectPhysicalDeviceInfo) -> vk.PhysicalDevice {
+	l_info := info
 	physical_devices, _ := get_physical_devices(ctx.instance)
 	defer delete(physical_devices)
 
@@ -397,14 +389,18 @@ select_physical_device :: proc(ctx: VFSInstance, info: VFSSelectPhysicalDeviceIn
 
 		if info.desire_queue_families != nil && !validate_desire_queue_families(queue_familes, info.desire_queue_families) do continue
 		if info.prefer_device_type != nil && device_info.properties.deviceType != info.prefer_device_type do continue
-		//if info.require_present_capability != false && !device_info.features.present do continue
+		if info.require_present_support != false && !validate_present_support(device, info.surface) do continue
 		if info.require_device_memory_size != 0 && !validate_memory_size(device, info.require_device_memory_size) do continue
 		if info.minimum_vulkan_version != 0 && device_info.properties.apiVersion < info.minimum_vulkan_version do continue
-		if info.require_vulkan_11_features != {} && !validate_vk11_features(info.require_vulkan_11_features, device_info.vk11_features) do continue
-		if info.require_vulkan_12_features != {} && !validate_vk12_features(info.require_vulkan_12_features, device_info.vk12_features) do continue
-		if info.require_vulkan_13_features != {} && !validate_vk13_features(info.require_vulkan_13_features, device_info.vk13_features) do continue
-		if info.require_vulkan_14_features != {} && !validate_vk14_features(info.require_vulkan_14_features, device_info.vk14_features) do continue
+		if info.require_vulkan_11_features != {} && !validate_vk_features(l_info.require_vulkan_11_features, device_info.vk11_features) do continue
+		if info.require_vulkan_12_features != {} && !validate_vk_features(l_info.require_vulkan_12_features, device_info.vk12_features) do continue
+		if info.require_vulkan_13_features != {} && !validate_vk_features(l_info.require_vulkan_13_features, device_info.vk13_features) do continue
+		if info.require_vulkan_14_features != {} && !validate_vk_features(l_info.require_vulkan_14_features, device_info.vk14_features) do continue
+
+		selected_physical_device = device
+		break
 	}
+
 
 	if selected_physical_device == nil do fmt.panicf("No physical device met the requirements.")
 	return selected_physical_device

@@ -8,7 +8,7 @@ import "vendor:glfw"
 
 APPLICATION_NAME 					: cstring				: "Solynchal"
 REQUIRED_EXTENSIONS					: []cstring				: {}
-REQUIRED_LAYERS						: []cstring				: {"VK_LAYER_KHRONOS_validation"}
+REQUIRED_LAYERS						: []cstring				: {}
 DEFAULT_WINDOW_WIDTH 				: c.int					: 800
 DEFAULT_WINDOW_HEIGHT 				: c.int					: 600
 
@@ -21,21 +21,35 @@ Context :: struct {
 	surface					: vk.SurfaceKHR,
 }
 
-app_info := vk.ApplicationInfo{
-	sType = .APPLICATION_INFO,
-	pApplicationName = APPLICATION_NAME,
-	applicationVersion = vk.MAKE_VERSION(1, 0, 0),
-	pEngineName = "Optato",
-	engineVersion = vk.MAKE_VERSION(1, 0, 0),
-	apiVersion = vk.API_VERSION_1_3,
+vfs_create_info := VFSInstanceCreateInfo{
+	app_name = APPLICATION_NAME,
+	app_version = vk.MAKE_VERSION(1, 0, 0),
+	engine_name = "Optato",
+	engine_version = vk.MAKE_VERSION(1, 0, 0),
+	api_version = vk.API_VERSION_1_4,
+	window_width = DEFAULT_WINDOW_WIDTH,
+	window_height = DEFAULT_WINDOW_HEIGHT,
+	window_title = APPLICATION_NAME,
+	enable_extensions = REQUIRED_EXTENSIONS,
+	enable_layers = REQUIRED_LAYERS,
+	enable_validation_layers = true,
 }
 
 main :: proc() {
-	ctx: Context
+	instance := create_instance(vfs_create_info)
+	defer destroy_instance(instance)
 
-	init_vulkan(&ctx.library, REQUIRED_EXTENSIONS, REQUIRED_LAYERS, &app_info, &ctx.instance)
-	defer deinit_vulkan(ctx.library, ctx.instance)
 
-	create_window(ctx.instance, &ctx.window, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT, APPLICATION_NAME, &ctx, &ctx.surface)
-	defer destory_window(ctx.instance, ctx.window, ctx.surface)
+	select_physical_device_info := VFSSelectPhysicalDeviceInfo{
+		surface = instance.surface,
+		prefer_device_type = .DISCRETE_GPU,
+		require_present_support = true,
+		minimum_vulkan_version = vk.API_VERSION_1_4,
+		require_vulkan_11_features = {.shaderDrawParameters},
+		require_vulkan_13_features = {.dynamicRendering, .synchronization2},
+	}
+
+	device := select_physical_device(instance, select_physical_device_info)
+
+	fmt.println("SUCCESS")
 }
