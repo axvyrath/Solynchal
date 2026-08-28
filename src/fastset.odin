@@ -356,6 +356,14 @@ DesireQueueFamily :: enum {
 	SeperatedTransferQueue = 3,
 }
 
+VFSDesireFeatures :: struct {
+	vulkan_11_features: Vulkan11Features,
+	vulkan_12_features: Vulkan12Features,
+	vulkan_13_features: Vulkan13Features,
+	vulkan_14_features: Vulkan14Features,
+	ext_dynamic_state_features: ExtDynamicStateFeatures,
+}
+
 VFSSelectPhysicalDeviceInfo :: struct {
 	surface: vk.SurfaceKHR,
 
@@ -365,16 +373,15 @@ VFSSelectPhysicalDeviceInfo :: struct {
 	require_device_memory_size: vk.DeviceSize,
 	minimum_vulkan_version: u32,
 
-	require_vulkan_11_features: Vulkan11Features,
-	require_vulkan_12_features: Vulkan12Features,
-	require_vulkan_13_features: Vulkan13Features,
-	require_vulkan_14_features: Vulkan14Features,
+	desire_features: VFSDesireFeatures,
 }
 
 select_physical_device :: proc(ctx: VFSInstance, info: VFSSelectPhysicalDeviceInfo) -> vk.PhysicalDevice {
 	l_info := info
 	physical_devices, _ := get_physical_devices(ctx.instance)
 	defer delete(physical_devices)
+
+	desire_features := info.desire_features
 
 	selected_physical_device: vk.PhysicalDevice
 	for device in physical_devices {
@@ -392,10 +399,10 @@ select_physical_device :: proc(ctx: VFSInstance, info: VFSSelectPhysicalDeviceIn
 		if info.require_present_support != false && !validate_present_support(device, info.surface) do continue
 		if info.require_device_memory_size != 0 && !validate_memory_size(device, info.require_device_memory_size) do continue
 		if info.minimum_vulkan_version != 0 && device_info.properties.apiVersion < info.minimum_vulkan_version do continue
-		if info.require_vulkan_11_features != {} && !validate_vk_features(l_info.require_vulkan_11_features, device_info.vk11_features) do continue
-		if info.require_vulkan_12_features != {} && !validate_vk_features(l_info.require_vulkan_12_features, device_info.vk12_features) do continue
-		if info.require_vulkan_13_features != {} && !validate_vk_features(l_info.require_vulkan_13_features, device_info.vk13_features) do continue
-		if info.require_vulkan_14_features != {} && !validate_vk_features(l_info.require_vulkan_14_features, device_info.vk14_features) do continue
+		if desire_features.vulkan_11_features != {} && !validate_vk_features(desire_features.vulkan_11_features, device_info.vk11_features) do continue
+		if desire_features.vulkan_12_features != {} && !validate_vk_features(desire_features.vulkan_12_features, device_info.vk12_features) do continue
+		if desire_features.vulkan_13_features != {} && !validate_vk_features(desire_features.vulkan_13_features, device_info.vk13_features) do continue
+		if desire_features.vulkan_14_features != {} && !validate_vk_features(desire_features.vulkan_14_features, device_info.vk14_features) do continue
 
 		selected_physical_device = device
 		break
@@ -404,4 +411,62 @@ select_physical_device :: proc(ctx: VFSInstance, info: VFSSelectPhysicalDeviceIn
 
 	if selected_physical_device == nil do fmt.panicf("No physical device met the requirements.")
 	return selected_physical_device
+}
+
+VFSLogicalDeviceCreateInfo :: struct {
+	desire_features: VFSDesireFeatures,
+	desire_queue_flag: vk.QueueFlag,
+	queue_priority: f32,
+	device_extensions: []cstring,
+}
+
+create_logical_device :: proc(physical_device: vk.PhysicalDevice, info: VFSLogicalDeviceCreateInfo) -> (vk.Device, vk.Queue, u32) {
+	l_info := info
+	queue_families, count := get_physical_device_queue_families(physical_device)
+
+	queue_family_index: u32
+	for i in 0..<count {
+		queue_family := queue_families[i]
+		if info.desire_queue_flag in queue_family.queueFlags {
+			queue_family_index = i
+			break
+		}
+	}
+
+	desire_features := l_info.desire_features
+	vulkan_11_features := make_vulkan_11_features(desire_features.vulkan_11_features)
+	vulkan_12_features := make_vulkan_12_features(desire_features.vulkan_12_features)
+	vulkan_13_features := make_vulkan_13_features(desire_features.vulkan_13_features)
+	vulkan_14_features := make_vulkan_14_features(desire_features.vulkan_14_features)
+	ext_dynamic_state_features := make_ext_dynamic_state_features(desire_features.ext_dynamic_state_features)
+
+	vulkan_11_features.pNext = &vulkan_12_features
+	vulkan_12_features.pNext = &vulkan_13_features
+	vulkan_13_features.pNext = &vulkan_14_features
+	vulkan_14_features.pNext = &ext_dynamic_state_features
+
+	queue_create_info := vk.DeviceQueueCreateInfo{
+		sType = .DEVICE_QUEUE_CREATE_INFO,
+		queueFamilyIndex = queue_family_index,
+		queueCount = 1,
+		pQueuePriorities = &l_info.queue_priority,
+	}
+	device_create_info := vk.DeviceCreateInfo{
+		sType = .DEVICE_CREATE_INFO,
+		pNext = &vulkan_11_features,
+		queueCreateInfoCount = 1,
+		pQueueCreateInfos = &queue_create_info,
+		enabledExtensionCount = u32(len(l_info.device_extensions)),
+		ppEnabledExtensionNames = raw_data(l_info.device_extensions[:]),
+	}
+
+	logical_device: vk.Device
+	queue: vk.Queue
+	vk.CreateDevice(physical_device, &device_create_info, nil, &logical_device)
+	vk.GetDeviceQueue(logical_device, queue_family_index, 0, &queue)
+	return logical_device, queue, queue_family_index
+}
+
+destroy_logical_device :: proc(logical_device: vk.Device) {
+	vk.DestroyDevice(logical_device, nil)
 }

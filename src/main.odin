@@ -35,21 +35,32 @@ vfs_create_info := VFSInstanceCreateInfo{
 	enable_validation_layers = true,
 }
 
+vfs_desire_features := VFSDesireFeatures{
+	vulkan_11_features = {.shaderDrawParameters},
+	vulkan_13_features = {.dynamicRendering, .synchronization2},
+	ext_dynamic_state_features = {.extendedDynamicState}
+}
+
 main :: proc() {
 	instance := create_instance(vfs_create_info)
 	defer destroy_instance(instance)
-
 
 	select_physical_device_info := VFSSelectPhysicalDeviceInfo{
 		surface = instance.surface,
 		prefer_device_type = .DISCRETE_GPU,
 		require_present_support = true,
 		minimum_vulkan_version = vk.API_VERSION_1_4,
-		require_vulkan_11_features = {.shaderDrawParameters},
-		require_vulkan_13_features = {.dynamicRendering, .synchronization2},
+		desire_features = vfs_desire_features,
 	}
 
 	device := select_physical_device(instance, select_physical_device_info)
 
-	fmt.println("SUCCESS")
+	device_create_info := VFSLogicalDeviceCreateInfo{
+		desire_features = vfs_desire_features,
+		desire_queue_flag = .GRAPHICS,
+		queue_priority = 0.5,
+	}
+
+	logical_device, queue, _ := create_logical_device(device, device_create_info)
+	defer destroy_logical_device(logical_device)
 }

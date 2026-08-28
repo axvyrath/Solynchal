@@ -113,6 +113,273 @@ Vulkan14Feature :: enum {
 	pushDescriptor,
 }
 
+ExtDynamicStateFeatures :: distinct bit_set[ExtDynamicStateFeature; u8]
+ExtDynamicStateFeature :: enum {
+	extendedDynamicState,
+}
+
+@(private)
+make_vulkan_11_features :: proc(required_features: Vulkan11Features) -> vk.PhysicalDeviceVulkan11Features {
+	features := vk.PhysicalDeviceVulkan11Features{
+		sType = .PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
+	}
+
+	for feature in required_features {
+		switch feature {
+		case .storageBuffer16BitAccess:
+			features.storageBuffer16BitAccess = true
+		case .uniformAndStorageBuffer16BitAccess:
+			features.uniformAndStorageBuffer16BitAccess = true
+		case .storagePushConstant16:
+			features.storagePushConstant16 = true
+		case .storageInputOutput16:
+			features.storageInputOutput16 = true
+		case .multiview:
+			features.multiview = true
+		case .multiviewGeometryShader:
+			features.multiviewGeometryShader = true
+		case .multiviewTessellationShader:
+			features.multiviewTessellationShader = true
+		case .variablePointersStorageBuffer:
+			features.variablePointersStorageBuffer = true
+		case .variablePointers:
+			features.variablePointers = true
+		case .protectedMemory:
+			features.protectedMemory = true
+		case .samplerYcbcrConversion:
+			features.samplerYcbcrConversion = true
+		case .shaderDrawParameters:
+			features.shaderDrawParameters = true
+		}
+	}
+
+	return features
+}
+
+@(private)
+make_vulkan_12_features :: proc(required_features: Vulkan12Features) -> vk.PhysicalDeviceVulkan12Features {
+	features := vk.PhysicalDeviceVulkan12Features{
+		sType = .PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
+	}
+
+	for feature in required_features {
+		switch feature {
+		case .samplerMirrorClampToEdge:
+			features.samplerMirrorClampToEdge = true
+		case .drawIndirectCount:
+			features.drawIndirectCount = true
+		case .storageBuffer8BitAccess:
+			features.storageBuffer8BitAccess = true
+		case .uniformAndStorageBuffer8BitAccess:
+			features.uniformAndStorageBuffer8BitAccess = true
+		case .storagePushConstant8:
+			features.storagePushConstant8 = true
+		case .shaderBufferInt64Atomics:
+			features.shaderBufferInt64Atomics = true
+		case .shaderSharedInt64Atomics:
+			features.shaderSharedInt64Atomics = true
+		case .shaderFloat16:
+			features.shaderFloat16 = true
+		case .shaderInt8:
+			features.shaderInt8 = true
+		case .descriptorIndexing:
+			features.descriptorIndexing = true
+		case .shaderInputAttachmentArrayDynamicIndexing:
+			features.shaderInputAttachmentArrayDynamicIndexing = true
+		case .shaderUniformTexelBufferArrayDynamicIndexing:
+			features.shaderUniformTexelBufferArrayDynamicIndexing = true
+		case .shaderStorageTexelBufferArrayDynamicIndexing:
+			features.shaderStorageTexelBufferArrayDynamicIndexing = true
+		case .shaderUniformBufferArrayNonUniformIndexing:
+			features.shaderUniformBufferArrayNonUniformIndexing = true
+		case .shaderSampledImageArrayNonUniformIndexing:
+			features.shaderSampledImageArrayNonUniformIndexing = true
+		case .shaderStorageBufferArrayNonUniformIndexing:
+			features.shaderStorageBufferArrayNonUniformIndexing = true
+		case .shaderStorageImageArrayNonUniformIndexing:
+			features.shaderStorageImageArrayNonUniformIndexing = true
+		case .shaderInputAttachmentArrayNonUniformIndexing:
+			features.shaderInputAttachmentArrayNonUniformIndexing = true
+		case .shaderUniformTexelBufferArrayNonUniformIndexing:
+			features.shaderUniformTexelBufferArrayNonUniformIndexing = true
+		case .shaderStorageTexelBufferArrayNonUniformIndexing:
+			features.shaderStorageTexelBufferArrayNonUniformIndexing = true
+		case .descriptorBindingUniformBufferUpdateAfterBind:
+			features.descriptorBindingUniformBufferUpdateAfterBind = true
+		case .descriptorBindingSampledImageUpdateAfterBind:
+			features.descriptorBindingSampledImageUpdateAfterBind = true
+		case .descriptorBindingStorageImageUpdateAfterBind:
+			features.descriptorBindingStorageImageUpdateAfterBind = true
+		case .descriptorBindingStorageBufferUpdateAfterBind:
+			features.descriptorBindingStorageBufferUpdateAfterBind = true
+		case .descriptorBindingUniformTexelBufferUpdateAfterBind:
+			features.descriptorBindingUniformTexelBufferUpdateAfterBind = true
+		case .descriptorBindingStorageTexelBufferUpdateAfterBind:
+			features.descriptorBindingStorageTexelBufferUpdateAfterBind = true
+		case .descriptorBindingUpdateUnusedWhilePending:
+			features.descriptorBindingUpdateUnusedWhilePending = true
+		case .descriptorBindingPartiallyBound:
+			features.descriptorBindingPartiallyBound = true
+		case .descriptorBindingVariableDescriptorCount:
+			features.descriptorBindingVariableDescriptorCount = true
+		case .runtimeDescriptorArray:
+			features.runtimeDescriptorArray = true
+		case .samplerFilterMinmax:
+			features.samplerFilterMinmax = true
+		case .scalarBlockLayout:
+			features.scalarBlockLayout = true
+		case .imagelessFramebuffer:
+			features.imagelessFramebuffer = true
+		case .uniformBufferStandardLayout:
+			features.uniformBufferStandardLayout = true
+		case .shaderSubgroupExtendedTypes:
+			features.shaderSubgroupExtendedTypes = true
+		case .separateDepthStencilLayouts:
+			features.separateDepthStencilLayouts = true
+		case .hostQueryReset:
+			features.hostQueryReset = true
+		case .timelineSemaphore:
+			features.timelineSemaphore = true
+		case .bufferDeviceAddress:
+			features.bufferDeviceAddress = true
+		case .bufferDeviceAddressCaptureReplay:
+			features.bufferDeviceAddressCaptureReplay = true
+		case .bufferDeviceAddressMultiDevice:
+			features.bufferDeviceAddressMultiDevice = true
+		case .vulkanMemoryModel:
+			features.vulkanMemoryModel = true
+		case .vulkanMemoryModelDeviceScope:
+			features.vulkanMemoryModelDeviceScope = true
+		case .vulkanMemoryModelAvailabilityVisibilityChains:
+			features.vulkanMemoryModelAvailabilityVisibilityChains = true
+		case .shaderOutputViewportIndex:
+			features.shaderOutputViewportIndex = true
+		case .shaderOutputLayer:
+			features.shaderOutputLayer = true
+		case .subgroupBroadcastDynamicId:
+			features.subgroupBroadcastDynamicId = true
+		}
+	}
+
+	return features
+}
+
+@(private)
+make_vulkan_13_features :: proc(required_features: Vulkan13Features) -> vk.PhysicalDeviceVulkan13Features {
+	features := vk.PhysicalDeviceVulkan13Features{
+		sType = .PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+	}
+
+	for feature in required_features {
+		switch feature {
+		case .robustImageAccess:
+			features.robustImageAccess = true
+		case .inlineUniformBlock:
+			features.inlineUniformBlock = true
+		case .descriptorBindingInlineUniformBlockUpdateAfterBind:
+			features.descriptorBindingInlineUniformBlockUpdateAfterBind = true
+		case .pipelineCreationCacheControl:
+			features.pipelineCreationCacheControl = true
+		case .privateData:
+			features.privateData = true
+		case .shaderDemoteToHelperInvocation:
+			features.shaderDemoteToHelperInvocation = true
+		case .shaderTerminateInvocation:
+			features.shaderTerminateInvocation = true
+		case .subgroupSizeControl:
+			features.subgroupSizeControl = true
+		case .computeFullSubgroups:
+			features.computeFullSubgroups = true
+		case .synchronization2:
+			features.synchronization2 = true
+		case .textureCompressionASTC_HDR:
+			features.textureCompressionASTC_HDR = true
+		case .shaderZeroInitializeWorkgroupMemory:
+			features.shaderZeroInitializeWorkgroupMemory = true
+		case .dynamicRendering:
+			features.dynamicRendering = true
+		case .shaderIntegerDotProduct:
+			features.shaderIntegerDotProduct = true
+		case .maintenance4:
+			features.maintenance4 = true
+		}
+	}
+
+	return features
+}
+
+@(private)
+make_vulkan_14_features :: proc(required_features: Vulkan14Features) -> vk.PhysicalDeviceVulkan14Features {
+	features := vk.PhysicalDeviceVulkan14Features{
+		sType = .PHYSICAL_DEVICE_VULKAN_1_4_FEATURES,
+	}
+
+	for feature in required_features {
+		switch feature {
+		case .globalPriorityQuery:
+			features.globalPriorityQuery = true
+		case .shaderSubgroupRotate:
+			features.shaderSubgroupRotate = true
+		case .shaderSubgroupRotateClustered:
+			features.shaderSubgroupRotateClustered = true
+		case .shaderFloatControls2:
+			features.shaderFloatControls2 = true
+		case .shaderExpectAssume:
+			features.shaderExpectAssume = true
+		case .rectangularLines:
+			features.rectangularLines = true
+		case .bresenhamLines:
+			features.bresenhamLines = true
+		case .smoothLines:
+			features.smoothLines = true
+		case .stippledRectangularLines:
+			features.stippledRectangularLines = true
+		case .stippledBresenhamLines:
+			features.stippledBresenhamLines = true
+		case .stippledSmoothLines:
+			features.stippledSmoothLines = true
+		case .vertexAttributeInstanceRateDivisor:
+			features.vertexAttributeInstanceRateDivisor = true
+		case .vertexAttributeInstanceRateZeroDivisor:
+			features.vertexAttributeInstanceRateZeroDivisor = true
+		case .indexTypeUint8:
+			features.indexTypeUint8 = true
+		case .dynamicRenderingLocalRead:
+			features.dynamicRenderingLocalRead = true
+		case .maintenance5:
+			features.maintenance5 = true
+		case .maintenance6:
+			features.maintenance6 = true
+		case .pipelineProtectedAccess:
+			features.pipelineProtectedAccess = true
+		case .pipelineRobustness:
+			features.pipelineRobustness = true
+		case .hostImageCopy:
+			features.hostImageCopy = true
+		case .pushDescriptor:
+			features.pushDescriptor = true
+		}
+	}
+
+	return features
+}
+
+@(private)
+make_ext_dynamic_state_features :: proc(required_features: ExtDynamicStateFeatures) -> vk.PhysicalDeviceExtendedDynamicStateFeaturesEXT {
+	features := vk.PhysicalDeviceExtendedDynamicStateFeaturesEXT{
+		sType = .PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT,
+	}
+
+	for feature in required_features {
+		switch feature {
+		case .extendedDynamicState:
+			features.extendedDynamicState = true
+		}
+	}
+
+	return features
+}
+
 @(private)
 validate_vk_features :: proc(require_vk_features: $T, avail_vk_features: $U) -> bool {
 	when T == Vulkan11Features {
@@ -326,6 +593,14 @@ validate_vk_features :: proc(require_vk_features: $T, avail_vk_features: $U) -> 
 				if !avail_vk_features.hostImageCopy do return false
 			case .pushDescriptor:
 				if !avail_vk_features.pushDescriptor do return false
+			}
+		}
+	}
+	when T == ExtDynamicStateFeatures {
+		for feature in require_vk_features {
+			switch feature {
+			case .extendedDynamicState:
+				if !avail_vk_features.extendedDynamicState do return false
 			}
 		}
 	}
