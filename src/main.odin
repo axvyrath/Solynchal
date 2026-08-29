@@ -30,8 +30,6 @@ vfs_create_info := VFSInstanceCreateInfo{
 	window_width = DEFAULT_WINDOW_WIDTH,
 	window_height = DEFAULT_WINDOW_HEIGHT,
 	window_title = APPLICATION_NAME,
-	enable_extensions = REQUIRED_EXTENSIONS,
-	enable_layers = REQUIRED_LAYERS,
 	enable_validation_layers = true,
 }
 

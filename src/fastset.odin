@@ -17,6 +17,7 @@ PhysicalDeviceInfo :: struct {
 	vk12_features: vk.PhysicalDeviceVulkan12Features,
 	vk13_features: vk.PhysicalDeviceVulkan13Features,
 	vk14_features: vk.PhysicalDeviceVulkan14Features,
+	ext_dynamic_state_features: vk.PhysicalDeviceExtendedDynamicStateFeaturesEXT,
 }
 
 @(private="file")
@@ -149,12 +150,13 @@ get_physical_device_info :: proc(device: vk.PhysicalDevice) -> PhysicalDeviceInf
 	vk12_features := vk.PhysicalDeviceVulkan12Features{sType = .PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, pNext = &vk11_features}
 	vk13_features := vk.PhysicalDeviceVulkan13Features{sType = .PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, pNext = &vk12_features}
 	vk14_features := vk.PhysicalDeviceVulkan14Features{sType = .PHYSICAL_DEVICE_VULKAN_1_4_FEATURES, pNext = &vk13_features}
+	ext_dynamic_state_features := vk.PhysicalDeviceExtendedDynamicStateFeaturesEXT{sType = .PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT, pNext = &vk14_features}
 
 	props: vk.PhysicalDeviceProperties
 
 	features := vk.PhysicalDeviceFeatures2{
 		sType = .PHYSICAL_DEVICE_FEATURES_2,
-		pNext = &vk14_features,
+		pNext = &ext_dynamic_state_features,
 	}
 	vk.GetPhysicalDeviceProperties(device, &props)
 	vk.GetPhysicalDeviceFeatures2(device, &features)
@@ -399,10 +401,11 @@ select_physical_device :: proc(ctx: VFSInstance, info: VFSSelectPhysicalDeviceIn
 		if info.require_present_support != false && !validate_present_support(device, info.surface) do continue
 		if info.require_device_memory_size != 0 && !validate_memory_size(device, info.require_device_memory_size) do continue
 		if info.minimum_vulkan_version != 0 && device_info.properties.apiVersion < info.minimum_vulkan_version do continue
-		if desire_features.vulkan_11_features != {} && !validate_vk_features(desire_features.vulkan_11_features, device_info.vk11_features) do continue
-		if desire_features.vulkan_12_features != {} && !validate_vk_features(desire_features.vulkan_12_features, device_info.vk12_features) do continue
-		if desire_features.vulkan_13_features != {} && !validate_vk_features(desire_features.vulkan_13_features, device_info.vk13_features) do continue
-		if desire_features.vulkan_14_features != {} && !validate_vk_features(desire_features.vulkan_14_features, device_info.vk14_features) do continue
+		if desire_features.vulkan_11_features != {} && !validate_vk11_features(desire_features.vulkan_11_features, device_info.vk11_features) do continue
+		if desire_features.vulkan_12_features != {} && !validate_vk12_features(desire_features.vulkan_12_features, device_info.vk12_features) do continue
+		if desire_features.vulkan_13_features != {} && !validate_vk13_features(desire_features.vulkan_13_features, device_info.vk13_features) do continue
+		if desire_features.vulkan_14_features != {} && !validate_vk14_features(desire_features.vulkan_14_features, device_info.vk14_features) do continue
+		if desire_features.ext_dynamic_state_features != {} && !validate_ext_dynamic_state_features(desire_features.ext_dynamic_state_features, device_info.ext_dynamic_state_features) do continue
 
 		selected_physical_device = device
 		break
