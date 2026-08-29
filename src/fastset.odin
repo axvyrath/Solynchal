@@ -173,6 +173,7 @@ get_physical_device_info :: proc(device: vk.PhysicalDevice) -> PhysicalDeviceInf
 		vk12_features = vk12_features,
 		vk13_features = vk13_features,
 		vk14_features = vk14_features,
+		ext_dynamic_state_features = ext_dynamic_state_features,
 	}
 
 	return physical_device_info
@@ -393,6 +394,7 @@ select_physical_device :: proc(ctx: VFSInstance, info: VFSSelectPhysicalDeviceIn
 	selected_physical_device: vk.PhysicalDevice
 	for device in physical_devices {
 		device_info := get_physical_device_info(device)
+		fmt.println(string(byte_to_cstring(device_info.properties.deviceName[:])))
 
 		queue_familes, _ := get_physical_device_queue_families(device)
 		device_exts, _ := get_physical_device_extention_props(device)
@@ -459,9 +461,14 @@ create_logical_device :: proc(physical_device: vk.PhysicalDevice, info: VFSLogic
 		queueCount = 1,
 		pQueuePriorities = &l_info.queue_priority,
 	}
+
+	device_features := vk.PhysicalDeviceFeatures2{
+		sType = .PHYSICAL_DEVICE_FEATURES_2,
+		pNext = &vulkan_11_features,
+	}
 	device_create_info := vk.DeviceCreateInfo{
 		sType = .DEVICE_CREATE_INFO,
-		pNext = &vulkan_11_features,
+		pNext = &device_features,
 		queueCreateInfoCount = 1,
 		pQueueCreateInfos = &queue_create_info,
 		enabledExtensionCount = u32(len(l_info.device_extensions)),

@@ -7,8 +7,7 @@ import vk "vendor:vulkan"
 import "vendor:glfw"
 
 APPLICATION_NAME 					: cstring				: "Solynchal"
-REQUIRED_EXTENSIONS					: []cstring				: {}
-REQUIRED_LAYERS						: []cstring				: {}
+REQUIRED_DEVICE_EXTENSIONS			: []cstring				: {vk.KHR_SWAPCHAIN_EXTENSION_NAME}
 DEFAULT_WINDOW_WIDTH 				: c.int					: 800
 DEFAULT_WINDOW_HEIGHT 				: c.int					: 600
 
@@ -19,6 +18,12 @@ Context :: struct {
 	physical_device			: vk.PhysicalDevice,
 	logical_device			: vk.Device,
 	surface					: vk.SurfaceKHR,
+	queue					: vk.Queue,
+	queue_family_idx		: u32,
+	swapchain				: vk.SwapchainKHR,
+	swapchain_images		: []vk.Image,
+	swapchain_surf_format	: vk.Format,
+	swapchain_ext			: vk.Extent2D,
 }
 
 vfs_create_info := VFSInstanceCreateInfo{
@@ -36,7 +41,116 @@ vfs_create_info := VFSInstanceCreateInfo{
 vfs_desire_features := VFSDesireFeatures{
 	vulkan_11_features = {.shaderDrawParameters},
 	vulkan_13_features = {.dynamicRendering, .synchronization2},
-	ext_dynamic_state_features = {.extendedDynamicState}
+	ext_dynamic_state_features = {.extendedDynamicState},
+}
+
+@(private="file")
+get_surface_capabilities :: proc(physical_device: vk.PhysicalDevice, surface: vk.SurfaceKHR, alloc := context.allocator) -> vk.SurfaceCapabilitiesKHR {
+	capabilities: vk.SurfaceCapabilitiesKHR
+	vk.GetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &capabilities)
+
+	return capabilities
+}
+
+@(private="file")
+get_surface_formats :: proc(physical_device: vk.PhysicalDevice, surface: vk.SurfaceKHR, alloc := context.allocator) -> ([]vk.SurfaceFormatKHR, u32) {
+	count: u32
+	vk.GetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &count, nil)
+	if count == 0 do return nil, 0
+
+	formats := make([]vk.SurfaceFormatKHR, count, alloc)
+	vk.GetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &count, raw_data(formats))
+
+	return formats, count
+}
+
+@(private="file")
+get_surface_present_modes :: proc(physical_device: vk.PhysicalDevice, surface: vk.SurfaceKHR, alloc := context.allocator) -> ([]vk.PresentModeKHR, u32) {
+	count: u32
+	vk.GetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &count, nil)
+	if count == 0 do return nil, 0
+
+	present_modes := make([]vk.PresentModeKHR, count, alloc)
+	vk.GetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &count, raw_data(present_modes))
+
+	return present_modes, count
+}
+
+@(private="file")
+get_swapchain_images :: proc(logical_device: vk.Device, swapchain: vk.SwapchainKHR, alloc := context.allocator) -> ([]vk.Image, u32) {
+	count: u32
+	vk.GetSwapchainImagesKHR(logical_device, swapchain, &count, nil)
+	if count == 0 do return nil, 0
+
+	images := make([]vk.Image, count, alloc)
+	vk.GetSwapchainImagesKHR(logical_device, swapchain, &count, raw_data(images))
+
+	return images, count
+}
+
+create_swapchain :: proc(ctx: ^Context) {
+	surface_caps := get_surface_capabilities(ctx.physical_device, ctx.surface)
+	surface_formats, _ := get_surface_formats(ctx.physical_device, ctx.surface)
+	surface_present_modes, _ := get_surface_present_modes(ctx.physical_device, ctx.surface)
+	defer {
+		delete(surface_formats)
+		delete(surface_present_modes)
+	}
+
+	chosen_format: vk.SurfaceFormatKHR
+	for surf_format in surface_formats {
+		if surf_format.format != .R8G8B8A8_SRGB || surf_format.colorSpace != .SRGB_NONLINEAR do continue
+		chosen_format = surf_format
+		break
+	}
+
+	chosen_present_mode: vk.PresentModeKHR
+	for present_mode in surface_present_modes {
+		if present_mode != .MAILBOX do continue
+		chosen_present_mode = present_mode
+		break
+	}
+
+	chosen_swap_ext: vk.Extent2D
+	if surface_caps.currentExtent.width != max(u32) {
+		chosen_swap_ext = surface_caps.currentExtent
+	} else {
+		width, height := glfw.GetFramebufferSize(ctx.window)
+		chosen_swap_ext.width = clamp(u32(width), surface_caps.minImageExtent.width, surface_caps.maxImageExtent.width)
+		chosen_swap_ext.height = clamp(u32(height), surface_caps.minImageExtent.height, surface_caps.maxImageExtent.height)
+	}
+
+	min_image_count := max(3, surface_caps.minImageCount)
+	if surface_caps.maxImageCount > 0 && min_image_count > surface_caps.maxImageCount {
+		min_image_count = surface_caps.maxImageCount
+	}
+
+	create_info := vk.SwapchainCreateInfoKHR{
+		sType = .SWAPCHAIN_CREATE_INFO_KHR,
+		surface = ctx.surface,
+		minImageCount = min_image_count,
+		imageFormat = chosen_format.format,
+		imageColorSpace = chosen_format.colorSpace,
+		imageExtent = chosen_swap_ext,
+		imageArrayLayers = 1,
+		imageUsage = {.COLOR_ATTACHMENT},
+		imageSharingMode = .EXCLUSIVE,
+		preTransform = surface_caps.currentTransform,
+		compositeAlpha = {.OPAQUE},
+		presentMode = chosen_present_mode,
+		clipped = true
+	}
+
+	vk.CreateSwapchainKHR(ctx.logical_device, &create_info, nil, &ctx.swapchain)
+
+	ctx.swapchain_images, _ = get_swapchain_images(ctx.logical_device, ctx.swapchain)
+	ctx.swapchain_surf_format = chosen_format.format
+	ctx.swapchain_ext = chosen_swap_ext
+}
+
+destory_swapchain :: proc(ctx: ^Context) {
+	vk.DestroySwapchainKHR(ctx.logical_device, ctx.swapchain, nil)
+	delete(ctx.swapchain_images)
 }
 
 main :: proc() {
@@ -57,8 +171,22 @@ main :: proc() {
 		desire_features = vfs_desire_features,
 		desire_queue_flag = .GRAPHICS,
 		queue_priority = 0.5,
+		device_extensions = REQUIRED_DEVICE_EXTENSIONS,
 	}
 
-	logical_device, queue, _ := create_logical_device(device, device_create_info)
+	logical_device, queue, queue_family_idx := create_logical_device(device, device_create_info)
 	defer destroy_logical_device(logical_device)
+
+	ctx := Context{
+		instance = instance.instance,
+		window = instance.window,
+		surface = instance.surface,
+		physical_device = device,
+		logical_device = logical_device,
+		queue = queue,
+		queue_family_idx = queue_family_idx,
+	}
+
+	create_swapchain(&ctx)
+	defer destory_swapchain(&ctx)
 }
