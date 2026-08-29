@@ -147,17 +147,22 @@ get_physical_devices :: proc(instance: vk.Instance, alloc := context.allocator) 
 @(private="file")
 get_physical_device_info :: proc(device: vk.PhysicalDevice) -> PhysicalDeviceInfo {
 	vk11_features := vk.PhysicalDeviceVulkan11Features{sType = .PHYSICAL_DEVICE_VULKAN_1_1_FEATURES}
-	vk12_features := vk.PhysicalDeviceVulkan12Features{sType = .PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, pNext = &vk11_features}
-	vk13_features := vk.PhysicalDeviceVulkan13Features{sType = .PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, pNext = &vk12_features}
-	vk14_features := vk.PhysicalDeviceVulkan14Features{sType = .PHYSICAL_DEVICE_VULKAN_1_4_FEATURES, pNext = &vk13_features}
-	ext_dynamic_state_features := vk.PhysicalDeviceExtendedDynamicStateFeaturesEXT{sType = .PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT, pNext = &vk14_features}
+	vk12_features := vk.PhysicalDeviceVulkan12Features{sType = .PHYSICAL_DEVICE_VULKAN_1_2_FEATURES}
+	vk13_features := vk.PhysicalDeviceVulkan13Features{sType = .PHYSICAL_DEVICE_VULKAN_1_3_FEATURES}
+	vk14_features := vk.PhysicalDeviceVulkan14Features{sType = .PHYSICAL_DEVICE_VULKAN_1_4_FEATURES}
+	ext_dynamic_state_features := vk.PhysicalDeviceExtendedDynamicStateFeaturesEXT{sType = .PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT}
+
+	vk11_features.pNext = &vk12_features
+	vk12_features.pNext = &vk13_features
+	vk13_features.pNext = &vk14_features
+	vk14_features.pNext = &ext_dynamic_state_features
 
 	props: vk.PhysicalDeviceProperties
-
 	features := vk.PhysicalDeviceFeatures2{
 		sType = .PHYSICAL_DEVICE_FEATURES_2,
-		pNext = &ext_dynamic_state_features,
+		pNext = &vk11_features,
 	}
+
 	vk.GetPhysicalDeviceProperties(device, &props)
 	vk.GetPhysicalDeviceFeatures2(device, &features)
 
