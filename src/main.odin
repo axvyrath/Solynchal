@@ -1,10 +1,13 @@
 package main
 
+import "core:strings"
 import "core:c"
 import "core:fmt"
+import "core:os"
 import "core:dynlib"
 import vk "vendor:vulkan"
 import "vendor:glfw"
+import "vendor:zlib"
 
 APPLICATION_NAME 					: cstring				: "Solynchal"
 REQUIRED_DEVICE_EXTENSIONS			: []cstring				: {vk.KHR_SWAPCHAIN_EXTENSION_NAME}
@@ -24,6 +27,7 @@ Context :: struct {
 	swapchain_images		: []vk.Image,
 	swapchain_surf_format	: vk.Format,
 	swapchain_ext			: vk.Extent2D,
+	swapchain_image_views	: []vk.ImageView,
 }
 
 vfs_create_info := VFSInstanceCreateInfo{
@@ -86,6 +90,47 @@ get_swapchain_images :: proc(logical_device: vk.Device, swapchain: vk.SwapchainK
 	vk.GetSwapchainImagesKHR(logical_device, swapchain, &count, raw_data(images))
 
 	return images, count
+}
+
+read_png_file :: proc(path: string, alloc := context.allocator) -> []u8 {
+	data, _ := os.read_entire_file_from_path(path, alloc)
+
+	header := data[:8]
+	if header[0] != 137 || header[1] != 80 || header[2] != 78 || header[3] != 71 || header[4] != 13 || header[5] != 10 || header[6] != 26 || header[7] != 10 do return nil
+
+	offset: u32 = 8
+	i: u32 = 0
+	for true {
+		i += 1
+
+		chunk_length := data[offset:offset+4]
+		chunk_name := data[offset+4:offset+8]
+		chunk_data := data[offset+8:offset+8+byte_to_number(chunk_length)]
+		chunk_crc := data[offset+8+byte_to_number(chunk_length):offset+12+byte_to_number(chunk_length)]
+
+		name, _ := strings.clone_from_bytes(chunk_name)
+
+		fmt.printfln("i: %d", i)
+		fmt.printfln("Length: %d", byte_to_number(chunk_length))
+		fmt.printfln("Name: %s", name)
+
+
+		// if name == "IDAT" {
+		// 	compress_method := data[offset+8:offset+9]
+		// 	addi_flag := data[offset+9:offset+10]
+		// 	check_value := data[offset+10+byte_to_number(chunk_length):offset+14+byte_to_number(chunk_length)]
+
+		// 	fmt.printfln("Compress method: %d", byte_to_number(compress_method))
+		// 	fmt.printfln("Additional flags: %d", byte_to_number(addi_flag))
+		// 	fmt.printfln("Check value: %d", byte_to_number(check_value))
+
+		// }
+
+		if name == "IEND" do break
+		offset += 12 + byte_to_number(chunk_length)
+	}
+
+	return nil
 }
 
 create_swapchain :: proc(ctx: ^Context) {
@@ -153,6 +198,40 @@ destory_swapchain :: proc(ctx: ^Context) {
 	delete(ctx.swapchain_images)
 }
 
+create_image_view :: proc(ctx: ^Context) {
+	create_info := vk.ImageViewCreateInfo{
+		sType = .IMAGE_VIEW_CREATE_INFO,
+		viewType = .D2,
+		format = ctx.swapchain_surf_format,
+		components = vk.ComponentMapping{
+			r = .IDENTITY,
+			g = .IDENTITY,
+			b = .IDENTITY,
+			a = .IDENTITY,
+		},
+		subresourceRange = vk.ImageSubresourceRange{
+			aspectMask = {.COLOR},
+			levelCount = 1,
+			layerCount = 1,
+		},
+	}
+
+	ctx.swapchain_image_views = make([]vk.ImageView, len(ctx.swapchain_images))
+	for i in 0..<len(ctx.swapchain_images) {
+		create_info.image = ctx.swapchain_images[i]
+
+		image_view: vk.ImageView
+		vk.CreateImageView(ctx.logical_device, &create_info, nil, &image_view)
+		ctx.swapchain_image_views[i] = image_view
+	}
+}
+
+destory_image_views :: proc(ctx: ^Context) {
+	for i in 0..<len(ctx.swapchain_image_views) {
+		vk.DestroyImageView(ctx.logical_device, ctx.swapchain_image_views[i], nil)
+	}
+}
+
 main :: proc() {
 	instance := create_instance(vfs_create_info)
 	defer destroy_instance(instance)
@@ -187,6 +266,5 @@ main :: proc() {
 		queue_family_idx = queue_family_idx,
 	}
 
-	create_swapchain(&ctx)
-	defer destory_swapchain(&ctx)
+	read_png_file("/home/mark/Projects/solynchal/test_1.png")
 }
