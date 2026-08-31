@@ -1,5 +1,6 @@
 package main
 
+import "core:image/png"
 import "core:strings"
 import "core:c"
 import "core:fmt"
@@ -13,6 +14,14 @@ APPLICATION_NAME 					: cstring				: "Solynchal"
 REQUIRED_DEVICE_EXTENSIONS			: []cstring				: {vk.KHR_SWAPCHAIN_EXTENSION_NAME}
 DEFAULT_WINDOW_WIDTH 				: c.int					: 800
 DEFAULT_WINDOW_HEIGHT 				: c.int					: 600
+
+PNG_HEADER							: u64					: 0x89504E470D0A1A0A
+PNG_IHDR_ID							: u32					: 0x49484452
+PNG_PLTE_ID							: u32					: 0x504C5445
+PNG_PHYS_ID							: u32					: 0x70485973
+PNG_TEXT_ID							: u32					: 0x74455874
+PNG_IDAT_ID							: u32					: 0x49444154
+PNG_IEND_ID							: u32					: 0x49454E44
 
 Context :: struct {
 	library					: dynlib.Library,
@@ -95,39 +104,22 @@ get_swapchain_images :: proc(logical_device: vk.Device, swapchain: vk.SwapchainK
 read_png_file :: proc(path: string, alloc := context.allocator) -> []u8 {
 	data, _ := os.read_entire_file_from_path(path, alloc)
 
-	header := data[:8]
-	if header[0] != 137 || header[1] != 80 || header[2] != 78 || header[3] != 71 || header[4] != 13 || header[5] != 10 || header[6] != 26 || header[7] != 10 do return nil
+	if eight_byte_to_number(data[:8]) != PNG_HEADER do return nil
 
 	offset: u32 = 8
-	i: u32 = 0
 	for true {
-		i += 1
+		chunk_length := four_byte_to_number(data[offset:offset+4])
+		chunk_name := four_byte_to_number(data[offset+4:offset+8])
+		chunk_data := data[offset+8:offset+8+chunk_length]
 
-		chunk_length := data[offset:offset+4]
-		chunk_name := data[offset+4:offset+8]
-		chunk_data := data[offset+8:offset+8+byte_to_number(chunk_length)]
-		chunk_crc := data[offset+8+byte_to_number(chunk_length):offset+12+byte_to_number(chunk_length)]
-
-		name, _ := strings.clone_from_bytes(chunk_name)
-
-		fmt.printfln("i: %d", i)
-		fmt.printfln("Length: %d", byte_to_number(chunk_length))
-		fmt.printfln("Name: %s", name)
-
-
-		// if name == "IDAT" {
-		// 	compress_method := data[offset+8:offset+9]
-		// 	addi_flag := data[offset+9:offset+10]
-		// 	check_value := data[offset+10+byte_to_number(chunk_length):offset+14+byte_to_number(chunk_length)]
-
-		// 	fmt.printfln("Compress method: %d", byte_to_number(compress_method))
-		// 	fmt.printfln("Additional flags: %d", byte_to_number(addi_flag))
-		// 	fmt.printfln("Check value: %d", byte_to_number(check_value))
+		// TODO: concat chunk data
+		fmt.println(strings.clone_from_bytes(data[offset+4:offset+8]))
+		// if chunk_name == PNG_IDAT_ID {
 
 		// }
 
-		if name == "IEND" do break
-		offset += 12 + byte_to_number(chunk_length)
+		if chunk_name == PNG_IEND_ID do break
+		offset += 12 + chunk_length
 	}
 
 	return nil
