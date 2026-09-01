@@ -1,5 +1,6 @@
 package main
 
+import "core:math"
 import "core:image/png"
 import "core:strings"
 import "core:c"
@@ -101,35 +102,85 @@ get_swapchain_images :: proc(logical_device: vk.Device, swapchain: vk.SwapchainK
 	return images, count
 }
 
-read_png_file :: proc(path: string, alloc := context.allocator) -> [dynamic]byte {
+read_png_file :: proc(path: string, alloc := context.allocator) -> []byte {
 	data, _ := os.read_entire_file_from_path(path, alloc)
+	defer delete(data)
 
 	if eight_byte_to_number(data[:8]) != PNG_HEADER do fmt.panicf("File is not PNG.")
 
 	offset: u32 = 8
+	idat_length: u32
 	concatnated: [dynamic]byte
+	defer delete(concatnated)
 
-	for true {
+	width: u32
+	height: u32
+	bit_depth: u8
+	color_type: u8
+	compression_method: u8
+	filter_method: u8
+	interlace_method: u8
+
+	read_chunk: for true {
 		chunk_length := four_byte_to_number(data[offset:offset+4])
 		chunk_name := four_byte_to_number(data[offset+4:offset+8])
 		chunk_data := data[offset+8:offset+8+chunk_length]
 
-		fmt.println(strings.clone_from_bytes(data[offset+4:offset+8]))
-		if chunk_name == PNG_IDAT_ID {
+		switch chunk_name {
+		case PNG_IHDR_ID:
+			width = four_byte_to_number(chunk_data[0:4])
+			height = four_byte_to_number(chunk_data[4:8])
+			bit_depth = chunk_data[8]
+			color_type = chunk_data[9]
+			compression_method = chunk_data[10]
+			filter_method = chunk_data[11]
+			interlace_method = chunk_data[12]
+		case PNG_IDAT_ID:
 			for b in chunk_data {
 				append(&concatnated, b)
+				idat_length += 1
 			}
+		case PNG_IEND_ID:
+			break read_chunk
 		}
 
-		if chunk_name == PNG_IEND_ID do break
 		offset += 12 + chunk_length
 	}
 
-	return concatnated
-}
+	fmt.println(width, height, bit_depth, color_type, compression_method, filter_method, interlace_method)
+	channels: u8
+	if color_type == 2 {
+		channels = 3
+	} else if color_type == 3 {
+		channels = 1
+	} else if color_type == 4 {
+		channels = 2
+	} else if color_type == 6 {
+		channels = 4
+	}
+	row_bytes := u64(math.ceil(f64(u64(width) * u64(channels) * u64(bit_depth) / 8)))
+	decompressed_size := u64(height) * (1 + row_bytes)
 
-decode_png_data :: proc(data: ^string, alloc := context.allocator) -> string {
-	return ""
+	decompressed := make([]byte, decompressed_size)
+	zlib.uncompress(raw_data(decompressed), &decompressed_size, raw_data(concatnated), u64(idat_length))
+
+	filter := decompressed[0]
+	unfiltered: []byte
+	if filter == 0 {
+
+	} else if filter == 1 {
+
+	} else if filter == 2 {
+
+	} else if filter == 3 {
+
+	} else if filter == 4 {
+
+	} else {
+		fmt.panicf("Filter type not exist.")
+	}
+
+	return nil
 }
 
 create_swapchain :: proc(ctx: ^Context) {
@@ -266,4 +317,6 @@ main :: proc() {
 	}
 
 	read_png_file("/home/mark/Projects/solynchal/test_1.png")
+
+
 }
