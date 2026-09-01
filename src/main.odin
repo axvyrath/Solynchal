@@ -108,6 +108,7 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> []u8 {
 
 	offset: u32 = 8
 	buf := strings.builder_make(alloc)
+	defer strings.builder_destroy(&buf)
 	for true {
 		chunk_length := four_byte_to_number(data[offset:offset+4])
 		chunk_name := four_byte_to_number(data[offset+4:offset+8])
