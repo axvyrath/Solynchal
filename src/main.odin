@@ -101,14 +101,14 @@ get_swapchain_images :: proc(logical_device: vk.Device, swapchain: vk.SwapchainK
 	return images, count
 }
 
-read_png_file :: proc(path: string, alloc := context.allocator) -> []u8 {
+read_png_file :: proc(path: string, alloc := context.allocator) -> [dynamic]byte {
 	data, _ := os.read_entire_file_from_path(path, alloc)
 
-	if eight_byte_to_number(data[:8]) != PNG_HEADER do return nil
+	if eight_byte_to_number(data[:8]) != PNG_HEADER do fmt.panicf("File is not PNG.")
 
 	offset: u32 = 8
-	buf := strings.builder_make(alloc)
-	defer strings.builder_destroy(&buf)
+	concatnated: [dynamic]byte
+
 	for true {
 		chunk_length := four_byte_to_number(data[offset:offset+4])
 		chunk_name := four_byte_to_number(data[offset+4:offset+8])
@@ -117,7 +117,7 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> []u8 {
 		fmt.println(strings.clone_from_bytes(data[offset+4:offset+8]))
 		if chunk_name == PNG_IDAT_ID {
 			for b in chunk_data {
-				fmt.sbprint(&buf, b)
+				append(&concatnated, b)
 			}
 		}
 
@@ -125,9 +125,11 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> []u8 {
 		offset += 12 + chunk_length
 	}
 
+	return concatnated
+}
 
-
-	return nil
+decode_png_data :: proc(data: ^string, alloc := context.allocator) -> string {
+	return ""
 }
 
 create_swapchain :: proc(ctx: ^Context) {
