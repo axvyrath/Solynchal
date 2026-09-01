@@ -107,20 +107,24 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> []u8 {
 	if eight_byte_to_number(data[:8]) != PNG_HEADER do return nil
 
 	offset: u32 = 8
+	buf := strings.builder_make(alloc)
 	for true {
 		chunk_length := four_byte_to_number(data[offset:offset+4])
 		chunk_name := four_byte_to_number(data[offset+4:offset+8])
 		chunk_data := data[offset+8:offset+8+chunk_length]
 
-		// TODO: concat chunk data
 		fmt.println(strings.clone_from_bytes(data[offset+4:offset+8]))
-		// if chunk_name == PNG_IDAT_ID {
-
-		// }
+		if chunk_name == PNG_IDAT_ID {
+			for b in chunk_data {
+				fmt.sbprint(&buf, b)
+			}
+		}
 
 		if chunk_name == PNG_IEND_ID do break
 		offset += 12 + chunk_length
 	}
+
+
 
 	return nil
 }
