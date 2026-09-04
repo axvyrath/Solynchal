@@ -1,8 +1,6 @@
 package main
 
 import "core:math"
-import "core:image/png"
-import "core:strings"
 import "core:c"
 import "core:fmt"
 import "core:os"
@@ -148,16 +146,21 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> []byte {
 	}
 
 	fmt.println(width, height, bit_depth, color_type, compression_method, filter_method, interlace_method)
+
 	channels: u8
-	if color_type == 2 {
+	switch color_type {
+	case 2:
 		channels = 3
-	} else if color_type == 3 {
+	case 3:
 		channels = 1
-	} else if color_type == 4 {
+	case 4:
 		channels = 2
-	} else if color_type == 6 {
+	case 6:
 		channels = 4
+	case:
+		fmt.panicf("Unsupported color type: %d", color_type)
 	}
+
 	row_bytes := u64(math.ceil(f64(u64(width) * u64(channels) * u64(bit_depth) / 8)))
 	decompressed_size := u64(height) * (1 + row_bytes)
 
