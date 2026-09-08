@@ -161,29 +161,85 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> []byte {
 		fmt.panicf("Unsupported color type: %d", color_type)
 	}
 
-	row_bytes := u64(math.ceil(f64(u64(width) * u64(channels) * u64(bit_depth) / 8)))
+	row_bytes := u64((width * u32(channels) * u32(bit_depth) + 7) / 8)
 	decompressed_size := u64(height) * (1 + row_bytes)
 
 	decompressed := make([]byte, decompressed_size)
 	zlib.uncompress(raw_data(decompressed), &decompressed_size, raw_data(concatnated), u64(idat_length))
+	defer delete(decompressed)
 
-	filter := decompressed[0]
-	unfiltered: []byte
-	if filter == 0 {
+	unfiltered := make([]byte, decompressed_size - u64(height))
 
-	} else if filter == 1 {
+	bpp := max(1, u64(math.ceil(f32(u32(channels) * u32(bit_depth) / 8))))
+	for i in 0..<u64(height) {
+		filter := decompressed[i * (row_bytes + 1)]
 
-	} else if filter == 2 {
+		switch filter {
+		case 0:
+			for j in 0..<row_bytes {
+				fmt.print(decompressed[i * (row_bytes + 1) + j])
+				unfiltered[i * row_bytes + j] = decompressed[i * (row_bytes + 1) + j + 1]
+			}
+		case 1:
+			for j in 0..<row_bytes {
+				curr_row := i * row_bytes + j
+				prev_value := unfiltered[curr_row - bpp] if j >= bpp else 0
 
-	} else if filter == 3 {
+				unfiltered[curr_row] = decompressed[i * (row_bytes + 1) + j + 1] + prev_value
+			}
+		case 2:
+			for j in 0..<row_bytes {
+				curr_row := i * row_bytes + j
+				prev_row := (i - 1) * row_bytes + j
+				up_value := unfiltered[prev_row] if i > 0 else 0
 
-	} else if filter == 4 {
+				unfiltered[curr_row] = decompressed[i * (row_bytes + 1) + j + 1] + up_value
+			}
+		case 3:
+			for j in 0..<row_bytes {
+				curr_row := i * row_bytes + j
+				prev_row := (i - 1) * row_bytes + j
+				prev_value := unfiltered[curr_row - bpp] if j >= bpp else 0
+				up_value := unfiltered[prev_row] if i > 0 else 0
 
-	} else {
-		fmt.panicf("Filter type not exist.")
+				unfiltered[curr_row] = decompressed[i * (row_bytes + 1) + j + 1] + u8(math.floor(f32(prev_value + up_value) / 2))
+			}
+		case 4:
+			for j in 0..<row_bytes {
+				curr_row := i * row_bytes + j
+				prev_row := (i - 1) * row_bytes + j
+
+				left_neighbor: byte = 0
+				up_neighbor: byte = 0
+				dig_neighbor: byte = 0
+				if j >= bpp do left_neighbor = unfiltered[curr_row - bpp]
+				if i > 0 do up_neighbor = unfiltered[prev_row]
+				if i > 0 && j >= bpp do dig_neighbor = unfiltered[prev_row - bpp]
+
+				paeth := i16(left_neighbor) + i16(up_neighbor) - i16(dig_neighbor)
+				paeth_left := abs(paeth - i16(left_neighbor))
+				paeth_up := abs(paeth - i16(up_neighbor))
+				paeth_dig := abs(paeth - i16(dig_neighbor))
+
+				selected_value: byte
+				if paeth_left <= paeth_up && paeth_left <= paeth_dig {
+					selected_value = left_neighbor
+				} else if paeth_up <= paeth_dig {
+					selected_value = up_neighbor
+				} else {
+					selected_value = dig_neighbor
+				}
+
+				unfiltered[curr_row] = decompressed[i * (row_bytes + 1) + j + 1] + selected_value
+			}
+		case:
+			fmt.panicf("Filter type not exist.")
+		}
 	}
 
-	return nil
+	fmt.println(unfiltered[u64(height - 2) * row_bytes:u64(height - 1) * row_bytes])
+
+	return unfiltered
 }
 
 create_swapchain :: proc(ctx: ^Context) {
@@ -319,7 +375,7 @@ main :: proc() {
 		queue_family_idx = queue_family_idx,
 	}
 
-	read_png_file("/home/mark/Projects/solynchal/test_1.png")
-
+	pixel_data := read_png_file("/home/mark/Projects/solynchal/test_1.png")
+	defer delete(pixel_data)
 
 }
