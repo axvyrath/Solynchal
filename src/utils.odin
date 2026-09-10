@@ -1,6 +1,5 @@
 package main
 
-import "core:fmt"
 concat :: proc(a, b: []$T, alloc := context.allocator) -> []T {
 	result := make([]T, len(a) + len(b), alloc)
 

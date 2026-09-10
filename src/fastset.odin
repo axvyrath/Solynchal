@@ -268,6 +268,20 @@ validate_present_support :: proc(physical_device: vk.PhysicalDevice, surface: vk
 	return false
 }
 
+@(private="file")
+find_memory_type :: proc(physical_device: vk.PhysicalDevice, type_filter: u32, properties: vk.MemoryPropertyFlags) -> u32 {
+	mem_properties: vk.PhysicalDeviceMemoryProperties
+	vk.GetPhysicalDeviceMemoryProperties(physical_device, &mem_properties)
+
+	for i in 0..<mem_properties.memoryTypeCount {
+		if type_filter & (1 << i) != 0 && mem_properties.memoryTypes[i].propertyFlags & properties == properties {
+			return i
+		}
+	}
+
+	fmt.panicf("Failed to find suitable memory type.")
+}
+
 VFSInstance :: struct {
 	library: dynlib.Library,
 	instance: vk.Instance,
@@ -485,3 +499,90 @@ create_logical_device :: proc(physical_device: vk.PhysicalDevice, info: VFSLogic
 destroy_logical_device :: proc(logical_device: vk.Device) {
 	vk.DestroyDevice(logical_device, nil)
 }
+
+create_buffer :: proc(
+	physical_device: vk.PhysicalDevice,
+	logical_device: vk.Device,
+	size: vk.DeviceSize,
+	usage: vk.BufferUsageFlags,
+	properties: vk.MemoryPropertyFlags,
+) -> (vk.Buffer, vk.DeviceMemory) {
+	buffer: vk.Buffer
+
+	create_info := vk.BufferCreateInfo{sType = .BUFFER_CREATE_INFO, size = size, usage = usage}
+	vk.CreateBuffer(logical_device, &create_info, nil, &buffer)
+
+	mem_requirements := vk.MemoryRequirements{}
+	vk.GetBufferMemoryRequirements(logical_device, buffer, &mem_requirements)
+
+	buffer_memory: vk.DeviceMemory
+	mem_alloc_info := vk.MemoryAllocateInfo{sType = .MEMORY_ALLOCATE_INFO, allocationSize = mem_requirements.size,
+		memoryTypeIndex = find_memory_type(physical_device, mem_requirements.memoryTypeBits, properties)}
+	vk.AllocateMemory(logical_device, &mem_alloc_info, nil, &buffer_memory)
+
+	vk.BindBufferMemory(logical_device, buffer, buffer_memory, 0)
+
+	return buffer, buffer_memory
+}
+
+copy_buffer :: proc(
+	logical_device: vk.Device,
+	command_pool: vk.CommandPool,
+	queue: vk.Queue,
+	src: vk.Buffer,
+	dst: vk.Buffer,
+	size: vk.DeviceSize,
+) {
+	command_buffer: vk.CommandBuffer
+	alloc_info := vk.CommandBufferAllocateInfo{
+		sType = .COMMAND_BUFFER_ALLOCATE_INFO, commandPool = command_pool, level = .PRIMARY, commandBufferCount = 1}
+	vk.AllocateCommandBuffers(logical_device, &alloc_info, &command_buffer)
+
+	begin_info := vk.CommandBufferBeginInfo{sType = .COMMAND_BUFFER_BEGIN_INFO, flags = .ONE_TIME_SUBMIT}
+	vk.BeginCommandBuffer(command_buffer, &begin_info)
+
+	copy_info := vk.BufferCopy{srcOffset = 0, dstOffset = 0, size = size}
+	vk.CmdCopyBuffer(command_buffer, src, dst, 1, &copy_info)
+
+	vk.EndCommandBuffer(command_buffer)
+
+	submit_info := vk.SubmitInfo{sType = .SUBMIT_INFO, commandBufferCount = 1, pCommandBuffers = &command_buffer}
+	vk.QueueSubmit(queue, 1, &submit_info, {})
+	vk.QueueWaitIdle(queue)
+}
+
+// copy_buffer_to_image :: proc(
+// 	logical_device: vk.Device,
+// 	command_pool: vk.CommandPool,
+// 	queue: vk.Queue,
+// 	buffer: vk.Buffer,
+// 	image_height: u32,
+// 	image_width: u32,
+// 	size: vk.DeviceSize,
+// ) {
+// 	command_buffer: vk.CommandBuffer
+// 	alloc_info := vk.CommandBufferAllocateInfo{
+// 		sType = .COMMAND_BUFFER_ALLOCATE_INFO, commandPool = command_pool, level = .PRIMARY, commandBufferCount = 1}
+// 	vk.AllocateCommandBuffers(logical_device, &alloc_info, &command_buffer)
+
+// 	begin_info := vk.CommandBufferBeginInfo{sType = .COMMAND_BUFFER_BEGIN_INFO, flags = .ONE_TIME_SUBMIT}
+// 	vk.BeginCommandBuffer(command_buffer, &begin_info)
+
+// 	copy_info := vk.BufferImageCopy{
+// 		bufferOffset = 0,
+// 		bufferRowLength = image_width,
+// 		bufferImageHeight = image_height,
+// 		imageSubresource = vk.ImageSubresourceLayers{
+// 			aspectMask = {.COLOR},
+// 			baseArrayLayer = 0,
+// 			layerCount = 1,
+// 		},
+// 	}
+// 	vk.CmdCopyBufferToImage(command_buffer, buffer, image, .TRANSFER_DST_OPTIMAL, 1, &copy_info)
+
+// 	vk.EndCommandBuffer(command_buffer)
+
+// 	submit_info := vk.SubmitInfo{sType = .SUBMIT_INFO, commandBufferCount = 1, pCommandBuffers = &command_buffer}
+// 	vk.QueueSubmit(queue, 1, &submit_info, {})
+// 	vk.QueueWaitIdle(queue)
+// }

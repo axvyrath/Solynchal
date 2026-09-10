@@ -31,6 +31,7 @@ Context :: struct {
 	surface					: vk.SurfaceKHR,
 	queue					: vk.Queue,
 	queue_family_idx		: u32,
+	command_pool			: vk.CommandPool,
 	swapchain				: vk.SwapchainKHR,
 	swapchain_images		: []vk.Image,
 	swapchain_surf_format	: vk.Format,
@@ -237,9 +238,13 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> []byte {
 		}
 	}
 
-	fmt.println(unfiltered[u64(height - 2) * row_bytes:u64(height - 1) * row_bytes])
-
 	return unfiltered
+}
+
+create_command_pool :: proc(ctx: ^Context) {
+	create_info := vk.CommandPoolCreateInfo{sType = .COMMAND_POOL_CREATE_INFO, flags = {.RESET_COMMAND_BUFFER},
+		queueFamilyIndex = ctx.queue_family_idx}
+	vk.CreateCommandPool(ctx.logical_device, &create_info, nil, &ctx.command_pool)
 }
 
 create_swapchain :: proc(ctx: ^Context) {
@@ -302,7 +307,7 @@ create_swapchain :: proc(ctx: ^Context) {
 	ctx.swapchain_ext = chosen_swap_ext
 }
 
-destory_swapchain :: proc(ctx: ^Context) {
+destroy_swapchain :: proc(ctx: ^Context) {
 	vk.DestroySwapchainKHR(ctx.logical_device, ctx.swapchain, nil)
 	delete(ctx.swapchain_images)
 }
@@ -335,10 +340,12 @@ create_image_view :: proc(ctx: ^Context) {
 	}
 }
 
-destory_image_views :: proc(ctx: ^Context) {
+destroy_image_views :: proc(ctx: ^Context) {
 	for i in 0..<len(ctx.swapchain_image_views) {
 		vk.DestroyImageView(ctx.logical_device, ctx.swapchain_image_views[i], nil)
 	}
+
+	delete(ctx.swapchain_image_views)
 }
 
 main :: proc() {
@@ -375,7 +382,17 @@ main :: proc() {
 		queue_family_idx = queue_family_idx,
 	}
 
+	create_command_pool(&ctx)
+	defer vk.DestroyCommandPool(ctx.logical_device, ctx.command_pool, nil)
+
 	pixel_data := read_png_file("/home/mark/Projects/solynchal/test_1.png")
 	defer delete(pixel_data)
+
+	create_swapchain(&ctx)
+	defer destroy_swapchain(&ctx)
+
+	create_image_view(&ctx)
+	defer destroy_image_views(&ctx)
+
 
 }
