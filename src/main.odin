@@ -247,6 +247,9 @@ create_command_pool :: proc(ctx: ^Context) {
 	vk.CreateCommandPool(ctx.logical_device, &create_info, nil, &ctx.command_pool)
 }
 
+upload_image :: proc(ctx: ^Context, ) {
+}
+
 create_swapchain :: proc(ctx: ^Context) {
 	surface_caps := get_surface_capabilities(ctx.physical_device, ctx.surface)
 	surface_formats, _ := get_surface_formats(ctx.physical_device, ctx.surface)
@@ -347,6 +350,11 @@ destroy_image_views :: proc(ctx: ^Context) {
 
 	delete(ctx.swapchain_image_views)
 }
+
+// create_image_buffer :: proc(ctx: ^Context, pixel_data: []byte) {
+// 	staging_buffer, _ := create_buffer(ctx.physical_device, ctx.logical_device, vk.DeviceSize(len(pixel_data)), {.TRANSFER_DST}, {.HOST_VISIBLE, .HOST_COHERENT})
+
+// }
 
 main :: proc() {
 	instance := create_instance(vfs_create_info)

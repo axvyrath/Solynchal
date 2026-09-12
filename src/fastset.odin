@@ -1,6 +1,5 @@
 package main
 
-import "core:reflect"
 import "core:c"
 import "core:dynlib"
 import "core:fmt"
@@ -551,38 +550,47 @@ copy_buffer :: proc(
 	vk.QueueWaitIdle(queue)
 }
 
-// copy_buffer_to_image :: proc(
-// 	logical_device: vk.Device,
-// 	command_pool: vk.CommandPool,
-// 	queue: vk.Queue,
-// 	buffer: vk.Buffer,
-// 	image_height: u32,
-// 	image_width: u32,
-// 	size: vk.DeviceSize,
-// ) {
-// 	command_buffer: vk.CommandBuffer
-// 	alloc_info := vk.CommandBufferAllocateInfo{
-// 		sType = .COMMAND_BUFFER_ALLOCATE_INFO, commandPool = command_pool, level = .PRIMARY, commandBufferCount = 1}
-// 	vk.AllocateCommandBuffers(logical_device, &alloc_info, &command_buffer)
+copy_buffer_to_image :: proc(
+	logical_device: vk.Device,
+	command_pool: vk.CommandPool,
+	queue: vk.Queue,
+	buffer: vk.Buffer,
+	image_height: u32,
+	image_width: u32,
+	size: vk.DeviceSize,
+) {
+	command_buffer: vk.CommandBuffer
+	alloc_info := vk.CommandBufferAllocateInfo{
+		sType = .COMMAND_BUFFER_ALLOCATE_INFO, commandPool = command_pool, level = .PRIMARY, commandBufferCount = 1}
+	vk.AllocateCommandBuffers(logical_device, &alloc_info, &command_buffer)
 
-// 	begin_info := vk.CommandBufferBeginInfo{sType = .COMMAND_BUFFER_BEGIN_INFO, flags = .ONE_TIME_SUBMIT}
-// 	vk.BeginCommandBuffer(command_buffer, &begin_info)
+	begin_info := vk.CommandBufferBeginInfo{sType = .COMMAND_BUFFER_BEGIN_INFO, flags = {.ONE_TIME_SUBMIT}}
+	vk.BeginCommandBuffer(command_buffer, &begin_info)
 
-// 	copy_info := vk.BufferImageCopy{
-// 		bufferOffset = 0,
-// 		bufferRowLength = image_width,
-// 		bufferImageHeight = image_height,
-// 		imageSubresource = vk.ImageSubresourceLayers{
-// 			aspectMask = {.COLOR},
-// 			baseArrayLayer = 0,
-// 			layerCount = 1,
-// 		},
-// 	}
-// 	vk.CmdCopyBufferToImage(command_buffer, buffer, image, .TRANSFER_DST_OPTIMAL, 1, &copy_info)
+	copy_info := vk.BufferImageCopy{
+		bufferOffset = 0,
+		bufferRowLength = 0,
+		bufferImageHeight = 0,
+		imageSubresource = vk.ImageSubresourceLayers{
+			aspectMask = {.COLOR},
+			mipLevel = 0,
+			baseArrayLayer = 0,
+			layerCount = 1,
+		},
+		imageOffset = vk.Offset3D{0, 0, 0},
+		imageExtent = vk.Extent3D{
+			height = image_height,
+			width = image_width,
+			depth = 1,
+		},
+	}
 
-// 	vk.EndCommandBuffer(command_buffer)
+	image: vk.Image
+	vk.CmdCopyBufferToImage(command_buffer, buffer, image, .TRANSFER_DST_OPTIMAL, 1, &copy_info)
 
-// 	submit_info := vk.SubmitInfo{sType = .SUBMIT_INFO, commandBufferCount = 1, pCommandBuffers = &command_buffer}
-// 	vk.QueueSubmit(queue, 1, &submit_info, {})
-// 	vk.QueueWaitIdle(queue)
-// }
+	vk.EndCommandBuffer(command_buffer)
+
+	submit_info := vk.SubmitInfo{sType = .SUBMIT_INFO, commandBufferCount = 1, pCommandBuffers = &command_buffer}
+	vk.QueueSubmit(queue, 1, &submit_info, {})
+	vk.QueueWaitIdle(queue)
+}
