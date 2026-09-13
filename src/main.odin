@@ -14,6 +14,7 @@ APPLICATION_NAME 					: cstring				: "Solynchal"
 REQUIRED_DEVICE_EXTENSIONS			: []cstring				: {vk.KHR_SWAPCHAIN_EXTENSION_NAME}
 DEFAULT_WINDOW_WIDTH 				: c.int					: 800
 DEFAULT_WINDOW_HEIGHT 				: c.int					: 600
+SHADER_FILE_PATH					: string				: "shaders/texture.spv"
 
 PNG_HEADER							: u64					: 0x89504E470D0A1A0A
 PNG_IHDR_ID							: u32					: 0x49484452
@@ -367,6 +368,29 @@ create_present_image :: proc(ctx: ^Context, pixel_data: []byte) {
 
 	ctx.present_image, ctx.present_image_memory = copy_buffer_to_image(ctx.physical_device, ctx.logical_device,
 		ctx.command_pool, ctx.queue, staging_buffer, 1920, 1080)
+}
+
+create_shader_module :: proc(ctx: ^Context, shader_code: []byte) -> vk.ShaderModule {
+	create_info := vk.ShaderModuleCreateInfo{
+		sType = .SHADER_MODULE_CREATE_INFO,
+		codeSize = len(shader_code),
+		pCode = cast(^u32)raw_data(shader_code),
+	}
+
+	shader_module := vk.ShaderModule{}
+	vk.CreateShaderModule(ctx.logical_device, &create_info, {}, &shader_module)
+	return shader_module
+}
+
+create_graphic_pipeline :: proc(ctx: ^Context, shader_module: vk.ShaderModule) {
+	shader_code, err := os.read_entire_file_from_path(SHADER_FILE_PATH, context.allocator)
+	if err != nil do fmt.panicf("Failed to read shader code.")
+	defer delete(shader_code)
+
+	shader_module := create_shader_module(ctx, shader_code)
+	defer vk.DestroyShaderModule(ctx.logical_device, shader_module, nil)
+
+
 }
 
 main :: proc() {
