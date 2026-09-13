@@ -1,5 +1,6 @@
 package main
 
+import "base:intrinsics"
 import "core:math"
 import "core:c"
 import "core:fmt"
@@ -37,6 +38,8 @@ Context :: struct {
 	swapchain_surf_format	: vk.Format,
 	swapchain_ext			: vk.Extent2D,
 	swapchain_image_views	: []vk.ImageView,
+	present_image			: vk.Image,
+	present_image_memory	: vk.DeviceMemory,
 }
 
 vfs_create_info := VFSInstanceCreateInfo{
@@ -351,10 +354,20 @@ destroy_image_views :: proc(ctx: ^Context) {
 	delete(ctx.swapchain_image_views)
 }
 
-// create_image_buffer :: proc(ctx: ^Context, pixel_data: []byte) {
-// 	staging_buffer, _ := create_buffer(ctx.physical_device, ctx.logical_device, vk.DeviceSize(len(pixel_data)), {.TRANSFER_DST}, {.HOST_VISIBLE, .HOST_COHERENT})
+create_present_image :: proc(ctx: ^Context, pixel_data: []byte) {
+	buffer_size := vk.DeviceSize(size_of(byte) * len(pixel_data))
+	staging_buffer, staging_buffer_mem := create_buffer(ctx.physical_device, ctx.logical_device, buffer_size,
+		{.TRANSFER_SRC}, {.HOST_VISIBLE, .HOST_COHERENT})
+	defer destroy_buffer(ctx.logical_device, staging_buffer, staging_buffer_mem)
 
-// }
+	staging_data: rawptr
+	vk.MapMemory(ctx.logical_device, staging_buffer_mem, 0, buffer_size, {}, &staging_data)
+	intrinsics.mem_copy_non_overlapping(staging_data, raw_data(pixel_data), int(buffer_size))
+	vk.UnmapMemory(ctx.logical_device, staging_buffer_mem)
+
+	ctx.present_image, ctx.present_image_memory = copy_buffer_to_image(ctx.physical_device, ctx.logical_device,
+		ctx.command_pool, ctx.queue, staging_buffer, 1920, 1080)
+}
 
 main :: proc() {
 	instance := create_instance(vfs_create_info)
@@ -395,6 +408,12 @@ main :: proc() {
 
 	pixel_data := read_png_file("/home/mark/Projects/solynchal/test_1.png")
 	defer delete(pixel_data)
+
+	create_present_image(&ctx, pixel_data)
+	defer {
+		vk.DestroyImage(ctx.logical_device, ctx.present_image, nil)
+		vk.FreeMemory(ctx.logical_device, ctx.present_image_memory, nil)
+	}
 
 	create_swapchain(&ctx)
 	defer destroy_swapchain(&ctx)

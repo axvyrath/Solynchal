@@ -524,6 +524,50 @@ create_buffer :: proc(
 	return buffer, buffer_memory
 }
 
+destroy_buffer :: proc(logical_device: vk.Device, buffer: vk.Buffer, buffer_memory: vk.DeviceMemory) {
+	vk.DestroyBuffer(logical_device, buffer, nil)
+	vk.FreeMemory(logical_device, buffer_memory, nil)
+}
+
+transition_image_layout :: proc(
+	command_buffer: vk.CommandBuffer,
+	image: vk.Image,
+	old_layout: vk.ImageLayout,
+	new_layout: vk.ImageLayout,
+	src_state_mask: vk.PipelineStageFlags2,
+	src_access_mark: vk.AccessFlags2,
+	dst_state_mask: vk.PipelineStageFlags2,
+	dst_access_mark: vk.AccessFlags2,
+) {
+	barrier := vk.ImageMemoryBarrier2{
+		sType = .IMAGE_MEMORY_BARRIER_2,
+		srcStageMask = src_state_mask,
+		srcAccessMask = src_access_mark,
+		dstStageMask = dst_state_mask,
+		dstAccessMask = dst_access_mark,
+		oldLayout = old_layout,
+		newLayout = new_layout,
+		srcQueueFamilyIndex = vk.QUEUE_FAMILY_IGNORED,
+		dstQueueFamilyIndex = vk.QUEUE_FAMILY_IGNORED,
+		image = image,
+		subresourceRange = {
+			aspectMask = {.COLOR},
+			baseMipLevel = 0,
+			levelCount = 1,
+			baseArrayLayer = 0,
+			layerCount = 1,
+		}
+	}
+
+	dependency_info := vk.DependencyInfo{
+		sType = .DEPENDENCY_INFO,
+		imageMemoryBarrierCount = 1,
+		pImageMemoryBarriers = &barrier,
+	}
+
+	vk.CmdPipelineBarrier2(command_buffer, &dependency_info)
+}
+
 copy_buffer :: proc(
 	logical_device: vk.Device,
 	command_pool: vk.CommandPool,
@@ -537,7 +581,7 @@ copy_buffer :: proc(
 		sType = .COMMAND_BUFFER_ALLOCATE_INFO, commandPool = command_pool, level = .PRIMARY, commandBufferCount = 1}
 	vk.AllocateCommandBuffers(logical_device, &alloc_info, &command_buffer)
 
-	begin_info := vk.CommandBufferBeginInfo{sType = .COMMAND_BUFFER_BEGIN_INFO, flags = .ONE_TIME_SUBMIT}
+	begin_info := vk.CommandBufferBeginInfo{sType = .COMMAND_BUFFER_BEGIN_INFO, flags = {.ONE_TIME_SUBMIT}}
 	vk.BeginCommandBuffer(command_buffer, &begin_info)
 
 	copy_info := vk.BufferCopy{srcOffset = 0, dstOffset = 0, size = size}
@@ -551,21 +595,19 @@ copy_buffer :: proc(
 }
 
 copy_buffer_to_image :: proc(
+	physical_device: vk.PhysicalDevice,
 	logical_device: vk.Device,
 	command_pool: vk.CommandPool,
 	queue: vk.Queue,
 	buffer: vk.Buffer,
-	image_height: u32,
 	image_width: u32,
-	size: vk.DeviceSize,
-) {
+	image_height: u32
+) -> (vk.Image, vk.DeviceMemory) {
 	command_buffer: vk.CommandBuffer
 	alloc_info := vk.CommandBufferAllocateInfo{
 		sType = .COMMAND_BUFFER_ALLOCATE_INFO, commandPool = command_pool, level = .PRIMARY, commandBufferCount = 1}
 	vk.AllocateCommandBuffers(logical_device, &alloc_info, &command_buffer)
 
-	begin_info := vk.CommandBufferBeginInfo{sType = .COMMAND_BUFFER_BEGIN_INFO, flags = {.ONE_TIME_SUBMIT}}
-	vk.BeginCommandBuffer(command_buffer, &begin_info)
 
 	copy_info := vk.BufferImageCopy{
 		bufferOffset = 0,
@@ -585,7 +627,43 @@ copy_buffer_to_image :: proc(
 		},
 	}
 
+	create_info := vk.ImageCreateInfo{
+		sType = .IMAGE_CREATE_INFO,
+		imageType = .D2,
+
+		format = .R8G8B8A8_UNORM,
+		extent = vk.Extent3D{
+			width = image_width,
+			height = image_height,
+			depth = 1,
+		},
+		mipLevels = 1,
+		arrayLayers = 1,
+		samples = {._1},
+		tiling = .OPTIMAL,
+		usage = {.TRANSFER_DST, .SAMPLED}
+	}
+
 	image: vk.Image
+	vk.CreateImage(logical_device, &create_info, nil, &image)
+
+	mem_requirements: vk.MemoryRequirements
+	vk.GetImageMemoryRequirements(logical_device, image, &mem_requirements)
+
+	mem_allocate_info := vk.MemoryAllocateInfo{
+		sType = .MEMORY_ALLOCATE_INFO,
+		allocationSize = mem_requirements.size,
+		memoryTypeIndex = find_memory_type(physical_device, mem_requirements.memoryTypeBits, {.DEVICE_LOCAL})
+	}
+
+	image_memory: vk.DeviceMemory
+	vk.AllocateMemory(logical_device, &mem_allocate_info, nil, &image_memory)
+	vk.BindImageMemory(logical_device, image, image_memory, 0)
+
+	begin_info := vk.CommandBufferBeginInfo{sType = .COMMAND_BUFFER_BEGIN_INFO, flags = {.ONE_TIME_SUBMIT}}
+	vk.BeginCommandBuffer(command_buffer, &begin_info)
+
+	transition_image_layout(command_buffer, image, .UNDEFINED, .TRANSFER_DST_OPTIMAL, {.TOP_OF_PIPE}, {}, {.COPY}, {.TRANSFER_WRITE})
 	vk.CmdCopyBufferToImage(command_buffer, buffer, image, .TRANSFER_DST_OPTIMAL, 1, &copy_info)
 
 	vk.EndCommandBuffer(command_buffer)
@@ -593,4 +671,6 @@ copy_buffer_to_image :: proc(
 	submit_info := vk.SubmitInfo{sType = .SUBMIT_INFO, commandBufferCount = 1, pCommandBuffers = &command_buffer}
 	vk.QueueSubmit(queue, 1, &submit_info, {})
 	vk.QueueWaitIdle(queue)
+
+	return image, image_memory
 }
