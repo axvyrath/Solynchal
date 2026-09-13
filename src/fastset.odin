@@ -650,11 +650,8 @@ copy_buffer_to_image :: proc(
 	mem_requirements: vk.MemoryRequirements
 	vk.GetImageMemoryRequirements(logical_device, image, &mem_requirements)
 
-	mem_allocate_info := vk.MemoryAllocateInfo{
-		sType = .MEMORY_ALLOCATE_INFO,
-		allocationSize = mem_requirements.size,
-		memoryTypeIndex = find_memory_type(physical_device, mem_requirements.memoryTypeBits, {.DEVICE_LOCAL})
-	}
+	mem_allocate_info := vk.MemoryAllocateInfo{sType = .MEMORY_ALLOCATE_INFO, allocationSize = mem_requirements.size,
+		memoryTypeIndex = find_memory_type(physical_device, mem_requirements.memoryTypeBits, {.DEVICE_LOCAL})}
 
 	image_memory: vk.DeviceMemory
 	vk.AllocateMemory(logical_device, &mem_allocate_info, nil, &image_memory)
@@ -663,8 +660,9 @@ copy_buffer_to_image :: proc(
 	begin_info := vk.CommandBufferBeginInfo{sType = .COMMAND_BUFFER_BEGIN_INFO, flags = {.ONE_TIME_SUBMIT}}
 	vk.BeginCommandBuffer(command_buffer, &begin_info)
 
-	transition_image_layout(command_buffer, image, .UNDEFINED, .TRANSFER_DST_OPTIMAL, {.TOP_OF_PIPE}, {}, {.COPY}, {.TRANSFER_WRITE})
+	transition_image_layout(command_buffer, image, .UNDEFINED, .TRANSFER_DST_OPTIMAL, {}, {}, {.COPY}, {.TRANSFER_WRITE})
 	vk.CmdCopyBufferToImage(command_buffer, buffer, image, .TRANSFER_DST_OPTIMAL, 1, &copy_info)
+	transition_image_layout(command_buffer, image, .TRANSFER_DST_OPTIMAL, .SHADER_READ_ONLY_OPTIMAL, {.COPY}, {.TRANSFER_WRITE}, {.FRAGMENT_SHADER}, {.SHADER_SAMPLED_READ})
 
 	vk.EndCommandBuffer(command_buffer)
 
