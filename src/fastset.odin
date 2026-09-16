@@ -19,6 +19,74 @@ PhysicalDeviceInfo :: struct {
 	ext_dynamic_state_features: vk.PhysicalDeviceExtendedDynamicStateFeaturesEXT,
 }
 
+VFSInstance :: struct {
+	library: dynlib.Library,
+	instance: vk.Instance,
+	window: glfw.WindowHandle,
+	surface: vk.SurfaceKHR,
+}
+
+VFSInstanceCreateInfo :: struct {
+	app_name: cstring,
+	app_version: u32,
+	engine_name: cstring,
+	engine_version: u32,
+	api_version: u32,
+
+	window_width: c.int,
+	window_height: c.int,
+	window_title: cstring,
+
+	enable_extensions: []cstring,
+	enable_layers: []cstring,
+	enable_validation_layers: bool,
+}
+
+DesireQueueFamilies :: distinct bit_set[DesireQueueFamily; u8]
+DesireQueueFamily :: enum {
+	DedicatedComputeQueue = 0,
+	DedicatedTransferQueue = 1,
+	SeperatedComputeQueue = 2,
+	SeperatedTransferQueue = 3,
+}
+
+VFSDesireFeatures :: struct {
+	vulkan_11_features: Vulkan11Features,
+	vulkan_12_features: Vulkan12Features,
+	vulkan_13_features: Vulkan13Features,
+	vulkan_14_features: Vulkan14Features,
+	ext_dynamic_state_features: ExtDynamicStateFeatures,
+}
+
+VFSSelectPhysicalDeviceInfo :: struct {
+	surface: vk.SurfaceKHR,
+
+	desire_queue_families: DesireQueueFamilies,
+	prefer_device_type: vk.PhysicalDeviceType,
+	require_present_support: b32,
+	require_device_memory_size: vk.DeviceSize,
+	minimum_vulkan_version: u32,
+
+	desire_features: VFSDesireFeatures,
+}
+
+VFSLogicalDeviceCreateInfo :: struct {
+	desire_features: VFSDesireFeatures,
+	desire_queue_flag: vk.QueueFlag,
+	queue_priority: f32,
+	device_extensions: []cstring,
+}
+
+VFSBufferImageInfo :: struct {
+	width: u32,
+	height: u32,
+	format: vk.Format,
+	usage: vk.ImageUsageFlags,
+	layout: vk.ImageLayout,
+	state_mask: vk.PipelineStageFlags2,
+	access_mask: vk.AccessFlags2,
+}
+
 @(private="file")
 load_vulkan_library :: proc(library: ^dynlib.Library) {
 	vulkan_lib, success := dynlib.load_library(VULKAN_LIBRARY_NAME)
@@ -281,29 +349,6 @@ find_memory_type :: proc(physical_device: vk.PhysicalDevice, type_filter: u32, p
 	fmt.panicf("Failed to find suitable memory type.")
 }
 
-VFSInstance :: struct {
-	library: dynlib.Library,
-	instance: vk.Instance,
-	window: glfw.WindowHandle,
-	surface: vk.SurfaceKHR,
-}
-
-VFSInstanceCreateInfo :: struct {
-	app_name: cstring,
-	app_version: u32,
-	engine_name: cstring,
-	engine_version: u32,
-	api_version: u32,
-
-	window_width: c.int,
-	window_height: c.int,
-	window_title: cstring,
-
-	enable_extensions: []cstring,
-	enable_layers: []cstring,
-	enable_validation_layers: bool,
-}
-
 create_instance :: proc(info: VFSInstanceCreateInfo) -> VFSInstance {
 	vulkan_lib: dynlib.Library
 	load_vulkan_library(&vulkan_lib)
@@ -369,34 +414,6 @@ destroy_instance :: proc(ctx: VFSInstance) {
 	dynlib.unload_library(ctx.library)
 }
 
-DesireQueueFamilies :: distinct bit_set[DesireQueueFamily; u8]
-DesireQueueFamily :: enum {
-	DedicatedComputeQueue = 0,
-	DedicatedTransferQueue = 1,
-	SeperatedComputeQueue = 2,
-	SeperatedTransferQueue = 3,
-}
-
-VFSDesireFeatures :: struct {
-	vulkan_11_features: Vulkan11Features,
-	vulkan_12_features: Vulkan12Features,
-	vulkan_13_features: Vulkan13Features,
-	vulkan_14_features: Vulkan14Features,
-	ext_dynamic_state_features: ExtDynamicStateFeatures,
-}
-
-VFSSelectPhysicalDeviceInfo :: struct {
-	surface: vk.SurfaceKHR,
-
-	desire_queue_families: DesireQueueFamilies,
-	prefer_device_type: vk.PhysicalDeviceType,
-	require_present_support: b32,
-	require_device_memory_size: vk.DeviceSize,
-	minimum_vulkan_version: u32,
-
-	desire_features: VFSDesireFeatures,
-}
-
 select_physical_device :: proc(ctx: VFSInstance, info: VFSSelectPhysicalDeviceInfo) -> vk.PhysicalDevice {
 	l_info := info
 	physical_devices, _ := get_physical_devices(ctx.instance)
@@ -434,13 +451,6 @@ select_physical_device :: proc(ctx: VFSInstance, info: VFSSelectPhysicalDeviceIn
 
 	if selected_physical_device == nil do fmt.panicf("No physical device met the requirements.")
 	return selected_physical_device
-}
-
-VFSLogicalDeviceCreateInfo :: struct {
-	desire_features: VFSDesireFeatures,
-	desire_queue_flag: vk.QueueFlag,
-	queue_priority: f32,
-	device_extensions: []cstring,
 }
 
 create_logical_device :: proc(physical_device: vk.PhysicalDevice, info: VFSLogicalDeviceCreateInfo) -> (vk.Device, vk.Queue, u32) {
@@ -532,10 +542,10 @@ destroy_buffer :: proc(logical_device: vk.Device, buffer: vk.Buffer, buffer_memo
 transition_image_layout :: proc(
 	command_buffer: vk.CommandBuffer,
 	image: vk.Image,
-	old_layout: vk.ImageLayout,
-	new_layout: vk.ImageLayout,
+	src_layout: vk.ImageLayout,
 	src_state_mask: vk.PipelineStageFlags2,
 	src_access_mark: vk.AccessFlags2,
+	dst_layout: vk.ImageLayout,
 	dst_state_mask: vk.PipelineStageFlags2,
 	dst_access_mark: vk.AccessFlags2,
 ) {
@@ -545,8 +555,8 @@ transition_image_layout :: proc(
 		srcAccessMask = src_access_mark,
 		dstStageMask = dst_state_mask,
 		dstAccessMask = dst_access_mark,
-		oldLayout = old_layout,
-		newLayout = new_layout,
+		oldLayout = src_layout,
+		newLayout = dst_layout,
 		srcQueueFamilyIndex = vk.QUEUE_FAMILY_IGNORED,
 		dstQueueFamilyIndex = vk.QUEUE_FAMILY_IGNORED,
 		image = image,
@@ -600,14 +610,12 @@ copy_buffer_to_image :: proc(
 	command_pool: vk.CommandPool,
 	queue: vk.Queue,
 	buffer: vk.Buffer,
-	image_width: u32,
-	image_height: u32
+	image_info: VFSBufferImageInfo
 ) -> (vk.Image, vk.DeviceMemory) {
 	command_buffer: vk.CommandBuffer
 	alloc_info := vk.CommandBufferAllocateInfo{
 		sType = .COMMAND_BUFFER_ALLOCATE_INFO, commandPool = command_pool, level = .PRIMARY, commandBufferCount = 1}
 	vk.AllocateCommandBuffers(logical_device, &alloc_info, &command_buffer)
-
 
 	copy_info := vk.BufferImageCopy{
 		bufferOffset = 0,
@@ -621,8 +629,8 @@ copy_buffer_to_image :: proc(
 		},
 		imageOffset = vk.Offset3D{0, 0, 0},
 		imageExtent = vk.Extent3D{
-			height = image_height,
-			width = image_width,
+			width = image_info.width,
+			height = image_info.height,
 			depth = 1,
 		},
 	}
@@ -631,17 +639,17 @@ copy_buffer_to_image :: proc(
 		sType = .IMAGE_CREATE_INFO,
 		imageType = .D2,
 
-		format = .R8G8B8A8_UNORM,
+		format = image_info.format,
 		extent = vk.Extent3D{
-			width = image_width,
-			height = image_height,
+			width = image_info.width,
+			height = image_info.height,
 			depth = 1,
 		},
 		mipLevels = 1,
 		arrayLayers = 1,
 		samples = {._1},
 		tiling = .OPTIMAL,
-		usage = {.TRANSFER_DST, .SAMPLED}
+		usage = image_info.usage
 	}
 
 	image: vk.Image
@@ -660,15 +668,18 @@ copy_buffer_to_image :: proc(
 	begin_info := vk.CommandBufferBeginInfo{sType = .COMMAND_BUFFER_BEGIN_INFO, flags = {.ONE_TIME_SUBMIT}}
 	vk.BeginCommandBuffer(command_buffer, &begin_info)
 
-	transition_image_layout(command_buffer, image, .UNDEFINED, .TRANSFER_DST_OPTIMAL, {}, {}, {.COPY}, {.TRANSFER_WRITE})
+	transition_image_layout(command_buffer, image, .UNDEFINED, {}, {}, .TRANSFER_DST_OPTIMAL, {.COPY}, {.TRANSFER_WRITE})
 	vk.CmdCopyBufferToImage(command_buffer, buffer, image, .TRANSFER_DST_OPTIMAL, 1, &copy_info)
-	transition_image_layout(command_buffer, image, .TRANSFER_DST_OPTIMAL, .SHADER_READ_ONLY_OPTIMAL, {.COPY}, {.TRANSFER_WRITE}, {.FRAGMENT_SHADER}, {.SHADER_SAMPLED_READ})
+	transition_image_layout(command_buffer, image, .TRANSFER_DST_OPTIMAL, {.COPY}, {.TRANSFER_WRITE},
+		image_info.layout, image_info.state_mask, image_info.access_mask)
 
 	vk.EndCommandBuffer(command_buffer)
 
 	submit_info := vk.SubmitInfo{sType = .SUBMIT_INFO, commandBufferCount = 1, pCommandBuffers = &command_buffer}
 	vk.QueueSubmit(queue, 1, &submit_info, {})
 	vk.QueueWaitIdle(queue)
+
+	vk.FreeCommandBuffers(logical_device, command_pool, 1, &command_buffer)
 
 	return image, image_memory
 }

@@ -14,7 +14,6 @@ APPLICATION_NAME 					: cstring				: "Solynchal"
 REQUIRED_DEVICE_EXTENSIONS			: []cstring				: {vk.KHR_SWAPCHAIN_EXTENSION_NAME}
 DEFAULT_WINDOW_WIDTH 				: c.int					: 800
 DEFAULT_WINDOW_HEIGHT 				: c.int					: 600
-SHADER_FILE_PATH					: string				: "shaders/texture.spv"
 
 PNG_HEADER							: u64					: 0x89504E470D0A1A0A
 PNG_IHDR_ID							: u32					: 0x49484452
@@ -41,6 +40,8 @@ Context :: struct {
 	swapchain_image_views	: []vk.ImageView,
 	present_image			: vk.Image,
 	present_image_memory	: vk.DeviceMemory,
+	present_completed		: vk.Semaphore,
+	render_finished			: vk.Semaphore,
 }
 
 vfs_create_info := VFSInstanceCreateInfo{
@@ -251,9 +252,6 @@ create_command_pool :: proc(ctx: ^Context) {
 	vk.CreateCommandPool(ctx.logical_device, &create_info, nil, &ctx.command_pool)
 }
 
-upload_image :: proc(ctx: ^Context, ) {
-}
-
 create_swapchain :: proc(ctx: ^Context) {
 	surface_caps := get_surface_capabilities(ctx.physical_device, ctx.surface)
 	surface_formats, _ := get_surface_formats(ctx.physical_device, ctx.surface)
@@ -299,7 +297,7 @@ create_swapchain :: proc(ctx: ^Context) {
 		imageColorSpace = chosen_format.colorSpace,
 		imageExtent = chosen_swap_ext,
 		imageArrayLayers = 1,
-		imageUsage = {.COLOR_ATTACHMENT},
+		imageUsage = {.TRANSFER_DST},
 		imageSharingMode = .EXCLUSIVE,
 		preTransform = surface_caps.currentTransform,
 		compositeAlpha = {.OPAQUE},
@@ -366,31 +364,36 @@ create_present_image :: proc(ctx: ^Context, pixel_data: []byte) {
 	intrinsics.mem_copy_non_overlapping(staging_data, raw_data(pixel_data), int(buffer_size))
 	vk.UnmapMemory(ctx.logical_device, staging_buffer_mem)
 
-	ctx.present_image, ctx.present_image_memory = copy_buffer_to_image(ctx.physical_device, ctx.logical_device,
-		ctx.command_pool, ctx.queue, staging_buffer, 1920, 1080)
-}
-
-create_shader_module :: proc(ctx: ^Context, shader_code: []byte) -> vk.ShaderModule {
-	create_info := vk.ShaderModuleCreateInfo{
-		sType = .SHADER_MODULE_CREATE_INFO,
-		codeSize = len(shader_code),
-		pCode = cast(^u32)raw_data(shader_code),
+	image_info := VFSBufferImageInfo{
+		width = 1920,
+		height = 1080,
+		format = .R8G8B8A8_SRGB,
+		usage = {.TRANSFER_DST},
+		layout = .PRESENT_SRC_KHR,
+		state_mask = {.BOTTOM_OF_PIPE},
+		access_mask = {},
 	}
 
-	shader_module := vk.ShaderModule{}
-	vk.CreateShaderModule(ctx.logical_device, &create_info, {}, &shader_module)
-	return shader_module
+	ctx.present_image, ctx.present_image_memory = copy_buffer_to_image(ctx.physical_device, ctx.logical_device,
+		ctx.command_pool, ctx.queue, staging_buffer, image_info)
 }
 
-create_graphic_pipeline :: proc(ctx: ^Context, shader_module: vk.ShaderModule) {
-	shader_code, err := os.read_entire_file_from_path(SHADER_FILE_PATH, context.allocator)
-	if err != nil do fmt.panicf("Failed to read shader code.")
-	defer delete(shader_code)
+blit_image_to_swapchain :: proc(ctx: ^Context, image: vk.Image) {
 
-	shader_module := create_shader_module(ctx, shader_code)
-	defer vk.DestroyShaderModule(ctx.logical_device, shader_module, nil)
+}
 
+render_frame :: proc(ctx: ^Context) {
+	image_index := u32(0)
 
+}
+
+main_loop :: proc(ctx: ^Context) {
+	for (!glfw.WindowShouldClose(ctx.window)) {
+		glfw.PollEvents()
+		render_frame(ctx)
+	}
+
+	vk.DeviceWaitIdle(ctx.logical_device)
 }
 
 main :: proc() {
@@ -446,4 +449,5 @@ main :: proc() {
 	defer destroy_image_views(&ctx)
 
 
+	main_loop(&ctx)
 }
