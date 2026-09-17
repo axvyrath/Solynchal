@@ -1,5 +1,6 @@
 package main
 
+import "core:image"
 import "base:intrinsics"
 import "core:math"
 import "core:c"
@@ -40,8 +41,10 @@ Context :: struct {
 	swapchain_image_views	: []vk.ImageView,
 	present_image			: vk.Image,
 	present_image_memory	: vk.DeviceMemory,
-	present_completed		: vk.Semaphore,
+	command_buffer			: vk.CommandBuffer,
+	image_acquired			: vk.Semaphore,
 	render_finished			: vk.Semaphore,
+
 }
 
 vfs_create_info := VFSInstanceCreateInfo{
@@ -208,7 +211,7 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> []byte {
 				prev_value := unfiltered[curr_row - bpp] if j >= bpp else 0
 				up_value := unfiltered[prev_row] if i > 0 else 0
 
-				unfiltered[curr_row] = decompressed[i * (row_bytes + 1) + j + 1] + u8(math.floor(f32(prev_value + up_value) / 2))
+				unfiltered[curr_row] = decompressed[i * (row_bytes + 1) + j + 1] + u8(math.floor(f32(u16(prev_value) + u16(up_value)) / 2))
 			}
 		case 4:
 			for j in 0..<row_bytes {
@@ -297,7 +300,7 @@ create_swapchain :: proc(ctx: ^Context) {
 		imageColorSpace = chosen_format.colorSpace,
 		imageExtent = chosen_swap_ext,
 		imageArrayLayers = 1,
-		imageUsage = {.TRANSFER_DST},
+		imageUsage = {.TRANSFER_DST, .COLOR_ATTACHMENT},
 		imageSharingMode = .EXCLUSIVE,
 		preTransform = surface_caps.currentTransform,
 		compositeAlpha = {.OPAQUE},
@@ -368,29 +371,95 @@ create_present_image :: proc(ctx: ^Context, pixel_data: []byte) {
 		width = 1920,
 		height = 1080,
 		format = .R8G8B8A8_SRGB,
-		usage = {.TRANSFER_DST},
-		layout = .PRESENT_SRC_KHR,
-		state_mask = {.BOTTOM_OF_PIPE},
-		access_mask = {},
+		usage = {.TRANSFER_DST, .TRANSFER_SRC},
+		layout = .TRANSFER_SRC_OPTIMAL,
+		state_mask = {.COPY},
+		access_mask = {.TRANSFER_READ},
 	}
 
 	ctx.present_image, ctx.present_image_memory = copy_buffer_to_image(ctx.physical_device, ctx.logical_device,
 		ctx.command_pool, ctx.queue, staging_buffer, image_info)
 }
 
-blit_image_to_swapchain :: proc(ctx: ^Context, image: vk.Image) {
+create_sync_objects :: proc(ctx: ^Context) {
+	semaphore_create_info := vk.SemaphoreCreateInfo{sType = .SEMAPHORE_CREATE_INFO}
 
+	vk.CreateSemaphore(ctx.logical_device, &semaphore_create_info, nil, &ctx.render_finished)
+	vk.CreateSemaphore(ctx.logical_device, &semaphore_create_info, nil, &ctx.image_acquired)
+}
+
+blit_image_to_swapchain :: proc(ctx: ^Context, image: vk.Image, image_index: u32) {
+	sub_resource := vk.ImageSubresourceLayers{
+		aspectMask = {.COLOR},
+		mipLevel = 0,
+		baseArrayLayer = 0,
+		layerCount = 1,
+	}
+
+	image_blit := vk.ImageBlit{
+		srcSubresource = sub_resource,
+		srcOffsets = {
+			vk.Offset3D{0, 0, 0},
+			vk.Offset3D{1920, 1080, 1}
+		},
+		dstSubresource = sub_resource,
+		dstOffsets = {
+			vk.Offset3D{0, 0, 0},
+			vk.Offset3D{
+				i32(ctx.swapchain_ext.width),
+				i32(ctx.swapchain_ext.height),
+				1,
+			}
+		},
+	}
+
+	vk.CmdBlitImage(ctx.command_buffer, image, .TRANSFER_SRC_OPTIMAL, ctx.swapchain_images[image_index], .TRANSFER_DST_OPTIMAL,
+		1, &image_blit, .LINEAR)
 }
 
 render_frame :: proc(ctx: ^Context) {
 	image_index := u32(0)
+	vk.AcquireNextImageKHR(ctx.logical_device, ctx.swapchain, max(u64), ctx.image_acquired, {}, &image_index)
 
+	begin_info := vk.CommandBufferBeginInfo{sType = .COMMAND_BUFFER_BEGIN_INFO}
+	vk.BeginCommandBuffer(ctx.command_buffer, &begin_info)
+
+	transition_image_layout(ctx.command_buffer, ctx.swapchain_images[image_index],
+		.UNDEFINED, {}, {}, .TRANSFER_DST_OPTIMAL, {.COPY}, {.TRANSFER_WRITE})
+	blit_image_to_swapchain(ctx, ctx.present_image, image_index)
+	transition_image_layout(ctx.command_buffer, ctx.swapchain_images[image_index],
+		.TRANSFER_DST_OPTIMAL, {}, {}, .PRESENT_SRC_KHR, {.BOTTOM_OF_PIPE}, {})
+
+	vk.EndCommandBuffer(ctx.command_buffer)
+
+	wait_dst_stage_mask := vk.PipelineStageFlags{.TRANSFER}
+	submit_info := vk.SubmitInfo{
+		sType = .SUBMIT_INFO,
+		waitSemaphoreCount = 1,
+		pWaitSemaphores = &ctx.image_acquired,
+		signalSemaphoreCount = 1,
+		pSignalSemaphores = &ctx.render_finished,
+		commandBufferCount = 1,
+		pCommandBuffers = &ctx.command_buffer,
+		pWaitDstStageMask = &wait_dst_stage_mask
+	}
+	vk.QueueSubmit(ctx.queue, 1, &submit_info, {})
+
+	present_info := vk.PresentInfoKHR{
+		sType = .PRESENT_INFO_KHR,
+		waitSemaphoreCount = 1,
+		pWaitSemaphores = &ctx.render_finished,
+		swapchainCount = 1,
+		pSwapchains = &ctx.swapchain,
+		pImageIndices = &image_index,
+	}
+	vk.QueuePresentKHR(ctx.queue, &present_info)
 }
 
 main_loop :: proc(ctx: ^Context) {
+	render_frame(ctx)
 	for (!glfw.WindowShouldClose(ctx.window)) {
 		glfw.PollEvents()
-		render_frame(ctx)
 	}
 
 	vk.DeviceWaitIdle(ctx.logical_device)
@@ -448,6 +517,19 @@ main :: proc() {
 	create_image_view(&ctx)
 	defer destroy_image_views(&ctx)
 
+	create_sync_objects(&ctx)
+	defer vk.DestroySemaphore(ctx.logical_device, ctx.image_acquired, nil)
+	defer vk.DestroySemaphore(ctx.logical_device, ctx.render_finished, nil)
+
+	command_buffer_alloc_info := vk.CommandBufferAllocateInfo{
+		sType = .COMMAND_BUFFER_ALLOCATE_INFO,
+		commandPool = ctx.command_pool,
+		commandBufferCount = 1,
+		level = .PRIMARY,
+	}
+
+	vk.AllocateCommandBuffers(ctx.logical_device, &command_buffer_alloc_info, &ctx.command_buffer)
+	defer vk.FreeCommandBuffers(ctx.logical_device, ctx.command_pool, 1, &ctx.command_buffer)
 
 	main_loop(&ctx)
 }
