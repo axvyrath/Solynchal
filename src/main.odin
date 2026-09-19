@@ -13,7 +13,7 @@ import "vendor:zlib"
 
 APPLICATION_NAME 					: cstring				: "Solynchal"
 REQUIRED_DEVICE_EXTENSIONS			: []cstring				: {vk.KHR_SWAPCHAIN_EXTENSION_NAME}
-DEFAULT_WINDOW_WIDTH 				: c.int					: 800
+DEFAULT_WINDOW_WIDTH 				: c.int					: 1000
 DEFAULT_WINDOW_HEIGHT 				: c.int					: 600
 
 PNG_HEADER							: u64					: 0x89504E470D0A1A0A
@@ -390,6 +390,11 @@ blit_image_to_swapchain :: proc(ctx: ^Context, image: vk.Image, image_index: u32
 		layerCount = 1,
 	}
 
+	height := ctx.swapchain_ext.width * 9 / 16
+	delta_height := ctx.swapchain_ext.height - height
+	ceil_height := delta_height / 2
+	floor_height := height + (delta_height / 2)
+	fmt.println(height, delta_height, ceil_height, floor_height)
 
 
 	image_blit := vk.ImageBlit{
@@ -400,10 +405,10 @@ blit_image_to_swapchain :: proc(ctx: ^Context, image: vk.Image, image_index: u32
 		},
 		dstSubresource = sub_resource,
 		dstOffsets = {
-			vk.Offset3D{0, 0, 0},
+			vk.Offset3D{0, i32(ceil_height), 0},
 			vk.Offset3D{
 				i32(ctx.swapchain_ext.width),
-				i32(ctx.swapchain_ext.height),
+				i32(floor_height),
 				1,
 			}
 		},
