@@ -59,12 +59,6 @@ vfs_create_info := VFSInstanceCreateInfo{
 	enable_validation_layers = true,
 }
 
-vfs_desire_features := VFSDesireFeatures{
-	vulkan_11_features = {.shaderDrawParameters},
-	vulkan_13_features = {.dynamicRendering, .synchronization2},
-	ext_dynamic_state_features = {.extendedDynamicState},
-}
-
 @(private="file")
 get_surface_capabilities :: proc(physical_device: vk.PhysicalDevice, surface: vk.SurfaceKHR, alloc := context.allocator) -> vk.SurfaceCapabilitiesKHR {
 	capabilities: vk.SurfaceCapabilitiesKHR
@@ -373,7 +367,7 @@ create_present_image :: proc(ctx: ^Context, pixel_data: []byte) {
 		format = .R8G8B8A8_SRGB,
 		usage = {.TRANSFER_DST, .TRANSFER_SRC},
 		layout = .TRANSFER_SRC_OPTIMAL,
-		state_mask = {.COPY},
+		state_mask = {.TRANSFER},
 		access_mask = {.TRANSFER_READ},
 	}
 
@@ -384,8 +378,8 @@ create_present_image :: proc(ctx: ^Context, pixel_data: []byte) {
 create_sync_objects :: proc(ctx: ^Context) {
 	semaphore_create_info := vk.SemaphoreCreateInfo{sType = .SEMAPHORE_CREATE_INFO}
 
-	vk.CreateSemaphore(ctx.logical_device, &semaphore_create_info, nil, &ctx.render_finished)
 	vk.CreateSemaphore(ctx.logical_device, &semaphore_create_info, nil, &ctx.image_acquired)
+	vk.CreateSemaphore(ctx.logical_device, &semaphore_create_info, nil, &ctx.render_finished)
 }
 
 blit_image_to_swapchain :: proc(ctx: ^Context, image: vk.Image, image_index: u32) {
@@ -395,6 +389,8 @@ blit_image_to_swapchain :: proc(ctx: ^Context, image: vk.Image, image_index: u32
 		baseArrayLayer = 0,
 		layerCount = 1,
 	}
+
+
 
 	image_blit := vk.ImageBlit{
 		srcSubresource = sub_resource,
@@ -425,10 +421,10 @@ render_frame :: proc(ctx: ^Context) {
 	vk.BeginCommandBuffer(ctx.command_buffer, &begin_info)
 
 	transition_image_layout(ctx.command_buffer, ctx.swapchain_images[image_index],
-		.UNDEFINED, {}, {}, .TRANSFER_DST_OPTIMAL, {.COPY}, {.TRANSFER_WRITE})
+		.UNDEFINED, {.TOP_OF_PIPE}, {}, .TRANSFER_DST_OPTIMAL, {.TRANSFER}, {.TRANSFER_WRITE})
 	blit_image_to_swapchain(ctx, ctx.present_image, image_index)
 	transition_image_layout(ctx.command_buffer, ctx.swapchain_images[image_index],
-		.TRANSFER_DST_OPTIMAL, {}, {}, .PRESENT_SRC_KHR, {.BOTTOM_OF_PIPE}, {})
+		.TRANSFER_DST_OPTIMAL, {.TRANSFER}, {.TRANSFER_WRITE}, .PRESENT_SRC_KHR, {.BOTTOM_OF_PIPE}, {})
 
 	vk.EndCommandBuffer(ctx.command_buffer)
 
@@ -466,6 +462,7 @@ main_loop :: proc(ctx: ^Context) {
 }
 
 main :: proc() {
+	fmt.println("Create instance")
 	instance := create_instance(vfs_create_info)
 	defer destroy_instance(instance)
 
@@ -474,18 +471,18 @@ main :: proc() {
 		prefer_device_type = .DISCRETE_GPU,
 		require_present_support = true,
 		minimum_vulkan_version = vk.API_VERSION_1_4,
-		desire_features = vfs_desire_features,
 	}
 
+	fmt.println("Select physical device")
 	device := select_physical_device(instance, select_physical_device_info)
 
 	device_create_info := VFSLogicalDeviceCreateInfo{
-		desire_features = vfs_desire_features,
 		desire_queue_flag = .GRAPHICS,
 		queue_priority = 0.5,
 		device_extensions = REQUIRED_DEVICE_EXTENSIONS,
 	}
 
+	fmt.println("Create logical device")
 	logical_device, queue, queue_family_idx := create_logical_device(device, device_create_info)
 	defer destroy_logical_device(logical_device)
 
@@ -499,24 +496,30 @@ main :: proc() {
 		queue_family_idx = queue_family_idx,
 	}
 
+	fmt.println("Create command pool")
 	create_command_pool(&ctx)
 	defer vk.DestroyCommandPool(ctx.logical_device, ctx.command_pool, nil)
 
+	fmt.println("Read PNG file")
 	pixel_data := read_png_file("/home/mark/Projects/solynchal/test_1.png")
 	defer delete(pixel_data)
 
+	fmt.println("Create present image")
 	create_present_image(&ctx, pixel_data)
 	defer {
 		vk.DestroyImage(ctx.logical_device, ctx.present_image, nil)
 		vk.FreeMemory(ctx.logical_device, ctx.present_image_memory, nil)
 	}
 
+	fmt.println("Create swapchain")
 	create_swapchain(&ctx)
 	defer destroy_swapchain(&ctx)
 
+	fmt.println("Create image view")
 	create_image_view(&ctx)
 	defer destroy_image_views(&ctx)
 
+	fmt.println("Create sync objects")
 	create_sync_objects(&ctx)
 	defer vk.DestroySemaphore(ctx.logical_device, ctx.image_acquired, nil)
 	defer vk.DestroySemaphore(ctx.logical_device, ctx.render_finished, nil)
@@ -528,8 +531,10 @@ main :: proc() {
 		level = .PRIMARY,
 	}
 
+	fmt.println("Allocate command buffer")
 	vk.AllocateCommandBuffers(ctx.logical_device, &command_buffer_alloc_info, &ctx.command_buffer)
 	defer vk.FreeCommandBuffers(ctx.logical_device, ctx.command_pool, 1, &ctx.command_buffer)
 
+	fmt.println("Render frame")
 	main_loop(&ctx)
 }

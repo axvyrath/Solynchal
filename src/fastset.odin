@@ -83,8 +83,8 @@ VFSBufferImageInfo :: struct {
 	format: vk.Format,
 	usage: vk.ImageUsageFlags,
 	layout: vk.ImageLayout,
-	state_mask: vk.PipelineStageFlags2,
-	access_mask: vk.AccessFlags2,
+	state_mask: vk.PipelineStageFlags,
+	access_mask: vk.AccessFlags,
 }
 
 @(private="file")
@@ -543,17 +543,15 @@ transition_image_layout :: proc(
 	command_buffer: vk.CommandBuffer,
 	image: vk.Image,
 	src_layout: vk.ImageLayout,
-	src_state_mask: vk.PipelineStageFlags2,
-	src_access_mark: vk.AccessFlags2,
+	src_state_mask: vk.PipelineStageFlags,
+	src_access_mark: vk.AccessFlags,
 	dst_layout: vk.ImageLayout,
-	dst_state_mask: vk.PipelineStageFlags2,
-	dst_access_mark: vk.AccessFlags2,
+	dst_state_mask: vk.PipelineStageFlags,
+	dst_access_mark: vk.AccessFlags,
 ) {
-	barrier := vk.ImageMemoryBarrier2{
-		sType = .IMAGE_MEMORY_BARRIER_2,
-		srcStageMask = src_state_mask,
+	barrier := vk.ImageMemoryBarrier{
+		sType = .IMAGE_MEMORY_BARRIER,
 		srcAccessMask = src_access_mark,
-		dstStageMask = dst_state_mask,
 		dstAccessMask = dst_access_mark,
 		oldLayout = src_layout,
 		newLayout = dst_layout,
@@ -569,13 +567,7 @@ transition_image_layout :: proc(
 		}
 	}
 
-	dependency_info := vk.DependencyInfo{
-		sType = .DEPENDENCY_INFO,
-		imageMemoryBarrierCount = 1,
-		pImageMemoryBarriers = &barrier,
-	}
-
-	vk.CmdPipelineBarrier2(command_buffer, &dependency_info)
+	vk.CmdPipelineBarrier(command_buffer, src_state_mask, dst_state_mask, nil, 0, {}, 0, {}, 1, &barrier)
 }
 
 copy_buffer :: proc(
@@ -668,9 +660,9 @@ copy_buffer_to_image :: proc(
 	begin_info := vk.CommandBufferBeginInfo{sType = .COMMAND_BUFFER_BEGIN_INFO, flags = {.ONE_TIME_SUBMIT}}
 	vk.BeginCommandBuffer(command_buffer, &begin_info)
 
-	transition_image_layout(command_buffer, image, .UNDEFINED, {}, {}, .TRANSFER_DST_OPTIMAL, {.COPY}, {.TRANSFER_WRITE})
+	transition_image_layout(command_buffer, image, .UNDEFINED, {.TOP_OF_PIPE}, {}, .TRANSFER_DST_OPTIMAL, {.TRANSFER}, {.TRANSFER_WRITE})
 	vk.CmdCopyBufferToImage(command_buffer, buffer, image, .TRANSFER_DST_OPTIMAL, 1, &copy_info)
-	transition_image_layout(command_buffer, image, .TRANSFER_DST_OPTIMAL, {.COPY}, {.TRANSFER_WRITE},
+	transition_image_layout(command_buffer, image, .TRANSFER_DST_OPTIMAL, {.TRANSFER}, {.TRANSFER_WRITE},
 		image_info.layout, image_info.state_mask, image_info.access_mask)
 
 	vk.EndCommandBuffer(command_buffer)
