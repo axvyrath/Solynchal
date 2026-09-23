@@ -1,6 +1,5 @@
 package main
 
-import "core:image"
 import "base:intrinsics"
 import "core:math"
 import "core:c"
@@ -390,25 +389,43 @@ blit_image_to_swapchain :: proc(ctx: ^Context, image: vk.Image, image_index: u32
 		layerCount = 1,
 	}
 
-	height := ctx.swapchain_ext.width * 9 / 16
-	delta_height := ctx.swapchain_ext.height - height
-	ceil_height := delta_height / 2
-	floor_height := height + (delta_height / 2)
-	fmt.println(height, delta_height, ceil_height, floor_height)
+	window_width := f64(ctx.swapchain_ext.width)
+	window_height := f64(ctx.swapchain_ext.height)
+	image_width := f64(1920)
+	image_height := f64(1080)
+	// Hardcoded image size for now
 
+	scale := min(window_width / image_width, window_height / image_height)
+	width := scale * image_width
+	height := scale * image_height
+
+	left := (window_width - width) / 2
+	top := (window_height - height) / 2
+	right := left + width
+	bottom := top + height
+
+	fmt.println(left, top, right, bottom)
 
 	image_blit := vk.ImageBlit{
 		srcSubresource = sub_resource,
 		srcOffsets = {
 			vk.Offset3D{0, 0, 0},
-			vk.Offset3D{1920, 1080, 1}
+			vk.Offset3D{
+				i32(image_width),
+				i32(image_height),
+				1,
+			}
 		},
 		dstSubresource = sub_resource,
 		dstOffsets = {
-			vk.Offset3D{0, i32(ceil_height), 0},
 			vk.Offset3D{
-				i32(ctx.swapchain_ext.width),
-				i32(floor_height),
+				i32(left),
+				i32(top),
+				0,
+			},
+			vk.Offset3D{
+				i32(right),
+				i32(bottom),
 				1,
 			}
 		},
