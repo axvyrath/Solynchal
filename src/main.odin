@@ -105,7 +105,8 @@ get_swapchain_images :: proc(logical_device: vk.Device, swapchain: vk.SwapchainK
 }
 
 read_png_file :: proc(path: string, alloc := context.allocator) -> []byte {
-	data, _ := os.read_entire_file_from_path(path, alloc)
+	data, read_err := os.read_entire_file_from_path(path, alloc)
+	if read_err != nil do fmt.panicf("Failed to read file: %v", read_err)
 	defer delete(data)
 
 	if eight_byte_to_number(data[:8]) != PNG_HEADER do fmt.panicf("File is not PNG.")
@@ -250,7 +251,7 @@ create_command_pool :: proc(ctx: ^Context) {
 	vk.CreateCommandPool(ctx.logical_device, &create_info, nil, &ctx.command_pool)
 }
 
-create_swapchain :: proc(ctx: ^Context, oldSwapchain: vk.SwapchainKHR) {
+create_swapchain :: proc(ctx: ^Context) {
 	surface_caps := get_surface_capabilities(ctx.physical_device, ctx.surface)
 	surface_formats, _ := get_surface_formats(ctx.physical_device, ctx.surface)
 	surface_present_modes, _ := get_surface_present_modes(ctx.physical_device, ctx.surface)
@@ -302,7 +303,6 @@ create_swapchain :: proc(ctx: ^Context, oldSwapchain: vk.SwapchainKHR) {
 		presentMode = chosen_present_mode,
 		clipped = true
 	}
-	if oldSwapchain != {} do create_info.oldSwapchain = oldSwapchain
 
 	vk.CreateSwapchainKHR(ctx.logical_device, &create_info, nil, &ctx.swapchain)
 
@@ -494,7 +494,7 @@ recreate_swapchain :: proc(ctx: ^Context, width: int, height: int) {
 		ctx.swapchain = {}
 	}
 
-	create_swapchain(ctx, old_swapchain)
+	create_swapchain(ctx)
 	create_image_view(ctx)
 }
 
@@ -566,8 +566,13 @@ main :: proc() {
 	create_command_pool(&ctx)
 	defer vk.DestroyCommandPool(ctx.logical_device, ctx.command_pool, nil)
 
+	if len(os.args) < 2 {
+		fmt.panicf("Usage: %s <path_to_png>", APPLICATION_NAME)
+	}
+	png_path := os.args[1]
+
 	fmt.println("Read PNG file")
-	pixel_data := read_png_file("/home/mark/Projects/solynchal/test_1.png")
+	pixel_data := read_png_file(png_path)
 	defer delete(pixel_data)
 
 	fmt.println("Create present image")
@@ -578,7 +583,7 @@ main :: proc() {
 	}
 
 	fmt.println("Create swapchain")
-	create_swapchain(&ctx, {})
+	create_swapchain(&ctx)
 	defer destroy_swapchain(&ctx)
 
 	fmt.println("Create image view")
