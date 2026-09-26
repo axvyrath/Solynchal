@@ -36,6 +36,7 @@ VFSInstanceCreateInfo :: struct {
 	window_width: c.int,
 	window_height: c.int,
 	window_title: cstring,
+	window_resizable: b32,
 
 	enable_extensions: []cstring,
 	enable_layers: []cstring,
@@ -181,7 +182,7 @@ create_vulkan_instance :: proc(info: VFSInstanceCreateInfo, required_extension_p
 @(private="file")
 create_drawable_surface :: proc(info: VFSInstanceCreateInfo, instance: vk.Instance) -> (vk.SurfaceKHR, glfw.WindowHandle) {
 	glfw.WindowHint(glfw.CLIENT_API, glfw.NO_API)
-	glfw.WindowHint(glfw.RESIZABLE, glfw.FALSE)
+	glfw.WindowHint(glfw.RESIZABLE, info.window_resizable)
 	window := glfw.CreateWindow(info.window_width, info.window_height, info.window_title, nil, nil)
 	if window == nil do fmt.panicf("Failed to create window.")
 

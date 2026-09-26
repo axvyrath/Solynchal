@@ -43,6 +43,7 @@ Context :: struct {
 	command_buffer			: vk.CommandBuffer,
 	image_acquired			: vk.Semaphore,
 	render_finished			: vk.Semaphore,
+	framebuffer_resized		: bool,
 
 }
 
@@ -55,6 +56,7 @@ vfs_create_info := VFSInstanceCreateInfo{
 	window_width = DEFAULT_WINDOW_WIDTH,
 	window_height = DEFAULT_WINDOW_HEIGHT,
 	window_title = APPLICATION_NAME,
+	window_resizable = true,
 	enable_validation_layers = true,
 }
 
@@ -248,7 +250,7 @@ create_command_pool :: proc(ctx: ^Context) {
 	vk.CreateCommandPool(ctx.logical_device, &create_info, nil, &ctx.command_pool)
 }
 
-create_swapchain :: proc(ctx: ^Context) {
+create_swapchain :: proc(ctx: ^Context, oldSwapchain: vk.SwapchainKHR) {
 	surface_caps := get_surface_capabilities(ctx.physical_device, ctx.surface)
 	surface_formats, _ := get_surface_formats(ctx.physical_device, ctx.surface)
 	surface_present_modes, _ := get_surface_present_modes(ctx.physical_device, ctx.surface)
@@ -300,6 +302,7 @@ create_swapchain :: proc(ctx: ^Context) {
 		presentMode = chosen_present_mode,
 		clipped = true
 	}
+	if oldSwapchain != {} do create_info.oldSwapchain = oldSwapchain
 
 	vk.CreateSwapchainKHR(ctx.logical_device, &create_info, nil, &ctx.swapchain)
 
@@ -474,13 +477,50 @@ render_frame :: proc(ctx: ^Context) {
 	vk.QueuePresentKHR(ctx.queue, &present_info)
 }
 
+recreate_swapchain :: proc(ctx: ^Context, width: int, height: int) {
+	for image_view in ctx.swapchain_image_views {
+		if image_view == {} do continue
+		vk.DestroyImageView(ctx.logical_device, image_view, nil)
+	}
+	delete(ctx.swapchain_image_views)
+	ctx.swapchain_image_views = nil
+
+	delete(ctx.swapchain_images)
+	ctx.swapchain_images = nil
+
+	old_swapchain := ctx.swapchain
+	if ctx.swapchain != {} {
+		vk.DestroySwapchainKHR(ctx.logical_device, ctx.swapchain, nil)
+		ctx.swapchain = {}
+	}
+
+	create_swapchain(ctx, old_swapchain)
+	create_image_view(ctx)
+}
+
 main_loop :: proc(ctx: ^Context) {
 	render_frame(ctx)
 	for (!glfw.WindowShouldClose(ctx.window)) {
 		glfw.PollEvents()
+
+		if ctx.framebuffer_resized != true do continue
+
+		width, height := glfw.GetFramebufferSize(ctx.window)
+		if width == 0 || height == 0 do continue
+
+		vk.DeviceWaitIdle(ctx.logical_device)
+		recreate_swapchain(ctx, int(width), int(height))
+		ctx.framebuffer_resized = false
+		render_frame(ctx)
 	}
 
 	vk.DeviceWaitIdle(ctx.logical_device)
+}
+
+framebuffer_resize_callback :: proc "c" (window: glfw.WindowHandle, width: c.int, height: c.int) {
+	ctx := cast(^Context)glfw.GetWindowUserPointer(window)
+	if ctx == nil do return
+	ctx.framebuffer_resized = true
 }
 
 main :: proc() {
@@ -492,7 +532,7 @@ main :: proc() {
 		surface = instance.surface,
 		prefer_device_type = .DISCRETE_GPU,
 		require_present_support = true,
-		minimum_vulkan_version = vk.API_VERSION_1_4,
+		minimum_vulkan_version = vk.API_VERSION_1_0,
 	}
 
 	fmt.println("Select physical device")
@@ -518,6 +558,10 @@ main :: proc() {
 		queue_family_idx = queue_family_idx,
 	}
 
+	glfw.MakeContextCurrent(ctx.window)
+	glfw.SetWindowUserPointer(ctx.window, &ctx)
+	glfw.SetFramebufferSizeCallback(ctx.window, framebuffer_resize_callback)
+
 	fmt.println("Create command pool")
 	create_command_pool(&ctx)
 	defer vk.DestroyCommandPool(ctx.logical_device, ctx.command_pool, nil)
@@ -534,7 +578,7 @@ main :: proc() {
 	}
 
 	fmt.println("Create swapchain")
-	create_swapchain(&ctx)
+	create_swapchain(&ctx, {})
 	defer destroy_swapchain(&ctx)
 
 	fmt.println("Create image view")
