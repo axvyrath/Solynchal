@@ -224,25 +224,22 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> DecodedImageI
 				curr_row := i * row_bytes + j
 				prev_row := (i - 1) * row_bytes + j
 
-				left_neighbor: byte = 0
-				up_neighbor: byte = 0
-				dig_neighbor: byte = 0
-				if j >= bpp do left_neighbor = unfiltered[curr_row - bpp]
-				if i > 0 do up_neighbor = unfiltered[prev_row]
-				if i > 0 && j >= bpp do dig_neighbor = unfiltered[prev_row - bpp]
+				left_neighbor := i16(unfiltered[curr_row - bpp]) if j >= bpp else 0
+				up_neighbor := i16(unfiltered[prev_row]) if i > 0 else 0
+				dig_neighbor := i16(unfiltered[prev_row - bpp]) if i > 0 && j >= bpp else 0
 
-				paeth := i16(left_neighbor) + i16(up_neighbor) - i16(dig_neighbor)
-				paeth_left := abs(paeth - i16(left_neighbor))
-				paeth_up := abs(paeth - i16(up_neighbor))
-				paeth_dig := abs(paeth - i16(dig_neighbor))
+				paeth := left_neighbor + up_neighbor - dig_neighbor
+				paeth_left := abs(paeth - left_neighbor)
+				paeth_up := abs(paeth - up_neighbor)
+				paeth_dig := abs(paeth - dig_neighbor)
 
 				selected_value: byte
 				if paeth_left <= paeth_up && paeth_left <= paeth_dig {
-					selected_value = left_neighbor
+					selected_value = u8(left_neighbor)
 				} else if paeth_up <= paeth_dig {
-					selected_value = up_neighbor
+					selected_value = u8(up_neighbor)
 				} else {
-					selected_value = dig_neighbor
+					selected_value = u8(dig_neighbor)
 				}
 
 				unfiltered[curr_row] = decompressed[i * (row_bytes + 1) + j + 1] + selected_value
@@ -269,8 +266,6 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> DecodedImageI
 	case 6:
 		normalized = unfiltered
 	}
-
-	fmt.println(normalized[:width])
 
 	decoded_image := DecodedImageInfo{
 		data = normalized,
