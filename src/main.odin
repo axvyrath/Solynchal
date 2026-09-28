@@ -39,6 +39,7 @@ Context :: struct {
 	swapchain_surf_format	: vk.Format,
 	swapchain_ext			: vk.Extent2D,
 	swapchain_image_views	: []vk.ImageView,
+	decoded_image_info		: DecodedImageInfo,
 	present_image			: vk.Image,
 	present_image_memory	: vk.DeviceMemory,
 	command_buffer			: vk.CommandBuffer,
@@ -388,20 +389,20 @@ destroy_image_views :: proc(ctx: ^Context) {
 	delete(ctx.swapchain_image_views)
 }
 
-create_present_image :: proc(ctx: ^Context, decoded_image: DecodedImageInfo) {
-	buffer_size := vk.DeviceSize(len(decoded_image.data))
+create_present_image :: proc(ctx: ^Context) {
+	buffer_size := vk.DeviceSize(len(ctx.decoded_image_info.data))
 	staging_buffer, staging_buffer_mem := create_buffer(ctx.physical_device, ctx.logical_device, buffer_size,
 		{.TRANSFER_SRC}, {.HOST_VISIBLE, .HOST_COHERENT})
 	defer destroy_buffer(ctx.logical_device, staging_buffer, staging_buffer_mem)
 
 	staging_data: rawptr
 	vk.MapMemory(ctx.logical_device, staging_buffer_mem, 0, buffer_size, {}, &staging_data)
-	intrinsics.mem_copy_non_overlapping(staging_data, raw_data(decoded_image.data), int(buffer_size))
+	intrinsics.mem_copy_non_overlapping(staging_data, raw_data(ctx.decoded_image_info.data), int(buffer_size))
 	vk.UnmapMemory(ctx.logical_device, staging_buffer_mem)
 
 	image_info := VFSBufferImageInfo{
-		width = decoded_image.width,
-		height = decoded_image.height,
+		width = ctx.decoded_image_info.width,
+		height = ctx.decoded_image_info.height,
 		format = .R8G8B8A8_SRGB,
 		usage = {.TRANSFER_DST, .TRANSFER_SRC},
 		layout = .TRANSFER_SRC_OPTIMAL,
@@ -430,9 +431,8 @@ blit_image_to_swapchain :: proc(ctx: ^Context, image: vk.Image, image_index: u32
 
 	window_width := f64(ctx.swapchain_ext.width)
 	window_height := f64(ctx.swapchain_ext.height)
-	image_width := f64(1920)
-	image_height := f64(1080)
-	// Hardcoded image size for now
+	image_width := f64(ctx.decoded_image_info.width)
+	image_height := f64(ctx.decoded_image_info.height)
 
 	scale := min(window_width / image_width, window_height / image_height)
 	width := scale * image_width
@@ -608,11 +608,11 @@ main :: proc() {
 	png_path := os.args[1]
 
 	fmt.println("Read PNG file")
-	decoded_image := read_png_file(png_path)
-	defer delete(decoded_image.data)
+	ctx.decoded_image_info = read_png_file(png_path)
+	defer delete(ctx.decoded_image_info.data)
 
 	fmt.println("Create present image")
-	create_present_image(&ctx, decoded_image)
+	create_present_image(&ctx)
 	defer {
 		vk.DestroyImage(ctx.logical_device, ctx.present_image, nil)
 		vk.FreeMemory(ctx.logical_device, ctx.present_image_memory, nil)
