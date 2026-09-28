@@ -22,6 +22,7 @@ PNG_PHYS_ID							: u32					: 0x70485973
 PNG_TEXT_ID							: u32					: 0x74455874
 PNG_IDAT_ID							: u32					: 0x49444154
 PNG_IEND_ID							: u32					: 0x49454E44
+IMAGE_CHANNEL_SIZE					: u32					: 4
 
 Context :: struct {
 	library					: dynlib.Library,
@@ -44,7 +45,14 @@ Context :: struct {
 	image_acquired			: vk.Semaphore,
 	render_finished			: vk.Semaphore,
 	framebuffer_resized		: bool,
+}
 
+DecodedImageInfo :: struct {
+	data: []byte,
+	width: u32,
+	height: u32,
+	bit_depth: u32,
+	color_type: u8,
 }
 
 vfs_create_info := VFSInstanceCreateInfo{
@@ -104,7 +112,7 @@ get_swapchain_images :: proc(logical_device: vk.Device, swapchain: vk.SwapchainK
 	return images, count
 }
 
-read_png_file :: proc(path: string, alloc := context.allocator) -> []byte {
+read_png_file :: proc(path: string, alloc := context.allocator) -> DecodedImageInfo {
 	data, read_err := os.read_entire_file_from_path(path, alloc)
 	if read_err != nil do fmt.panicf("Failed to read file: %v", read_err)
 	defer delete(data)
@@ -118,7 +126,7 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> []byte {
 
 	width: u32
 	height: u32
-	bit_depth: u8
+	bit_depth: u32
 	color_type: u8
 	compression_method: u8
 	filter_method: u8
@@ -133,7 +141,7 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> []byte {
 		case PNG_IHDR_ID:
 			width = four_byte_to_number(chunk_data[0:4])
 			height = four_byte_to_number(chunk_data[4:8])
-			bit_depth = chunk_data[8]
+			bit_depth = u32(chunk_data[8])
 			color_type = chunk_data[9]
 			compression_method = chunk_data[10]
 			filter_method = chunk_data[11]
@@ -152,8 +160,10 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> []byte {
 
 	fmt.println(width, height, bit_depth, color_type, compression_method, filter_method, interlace_method)
 
-	channels: u8
+	channels: u32
 	switch color_type {
+	case 0:
+		channels = 1
 	case 2:
 		channels = 3
 	case 3:
@@ -162,27 +172,25 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> []byte {
 		channels = 2
 	case 6:
 		channels = 4
-	case:
-		fmt.panicf("Unsupported color type: %d", color_type)
 	}
 
-	row_bytes := u64((width * u32(channels) * u32(bit_depth) + 7) / 8)
-	decompressed_size := u64(height) * (1 + row_bytes)
+	row_bytes := (width * channels * bit_depth + 7) / 8
+	decompressed_size := height * (1 + row_bytes)
+	u64_decompressed_size := u64(decompressed_size)
 
 	decompressed := make([]byte, decompressed_size)
-	zlib.uncompress(raw_data(decompressed), &decompressed_size, raw_data(concatnated), u64(idat_length))
+	zlib.uncompress(raw_data(decompressed), &u64_decompressed_size, raw_data(concatnated), u64(idat_length))
 	defer delete(decompressed)
 
-	unfiltered := make([]byte, decompressed_size - u64(height))
-
-	bpp := max(1, u64(math.ceil(f32(u32(channels) * u32(bit_depth) / 8))))
-	for i in 0..<u64(height) {
+	// THIS SHIT WON'T WORK UNLESS YOU FIX OFFSET TEH FILTER FOR EVERY COLOR TYPE
+	bpp := max(1, (channels * bit_depth) / 8)
+	unfiltered := make([]byte, decompressed_size - height)
+	for i in 0..<height {
 		filter := decompressed[i * (row_bytes + 1)]
 
 		switch filter {
 		case 0:
 			for j in 0..<row_bytes {
-				fmt.print(decompressed[i * (row_bytes + 1) + j])
 				unfiltered[i * row_bytes + j] = decompressed[i * (row_bytes + 1) + j + 1]
 			}
 		case 1:
@@ -207,7 +215,7 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> []byte {
 				prev_value := unfiltered[curr_row - bpp] if j >= bpp else 0
 				up_value := unfiltered[prev_row] if i > 0 else 0
 
-				unfiltered[curr_row] = decompressed[i * (row_bytes + 1) + j + 1] + u8(math.floor(f32(u16(prev_value) + u16(up_value)) / 2))
+				unfiltered[curr_row] = decompressed[i * (row_bytes + 1) + j + 1] + u8((u16(prev_value) + u16(up_value)) / 2)
 			}
 		case 4:
 			for j in 0..<row_bytes {
@@ -242,7 +250,35 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> []byte {
 		}
 	}
 
-	return unfiltered
+	normalized := make([]byte, height * width * IMAGE_CHANNEL_SIZE)
+	switch color_type {
+	case 2:
+		for i in 0..<height {
+			for j in 0..<width {
+				for k in 0..<IMAGE_CHANNEL_SIZE {
+					if k == 3 {
+						normalized[i * width + j * IMAGE_CHANNEL_SIZE + k] = 255
+						continue
+					}
+					normalized[i * width + j * IMAGE_CHANNEL_SIZE + k] = unfiltered[i * row_bytes + j * channels + k]
+				}
+			}
+		}
+	case 6:
+		normalized = unfiltered
+	}
+
+	fmt.println(normalized[:13])
+
+	decoded_image := DecodedImageInfo{
+		data = normalized,
+		width = width,
+		height = height,
+		bit_depth = bit_depth,
+		color_type = color_type,
+	}
+
+	return decoded_image
 }
 
 create_command_pool :: proc(ctx: ^Context) {
@@ -352,20 +388,20 @@ destroy_image_views :: proc(ctx: ^Context) {
 	delete(ctx.swapchain_image_views)
 }
 
-create_present_image :: proc(ctx: ^Context, pixel_data: []byte) {
-	buffer_size := vk.DeviceSize(size_of(byte) * len(pixel_data))
+create_present_image :: proc(ctx: ^Context, decoded_image: DecodedImageInfo) {
+	buffer_size := vk.DeviceSize(len(decoded_image.data))
 	staging_buffer, staging_buffer_mem := create_buffer(ctx.physical_device, ctx.logical_device, buffer_size,
 		{.TRANSFER_SRC}, {.HOST_VISIBLE, .HOST_COHERENT})
 	defer destroy_buffer(ctx.logical_device, staging_buffer, staging_buffer_mem)
 
 	staging_data: rawptr
 	vk.MapMemory(ctx.logical_device, staging_buffer_mem, 0, buffer_size, {}, &staging_data)
-	intrinsics.mem_copy_non_overlapping(staging_data, raw_data(pixel_data), int(buffer_size))
+	intrinsics.mem_copy_non_overlapping(staging_data, raw_data(decoded_image.data), int(buffer_size))
 	vk.UnmapMemory(ctx.logical_device, staging_buffer_mem)
 
 	image_info := VFSBufferImageInfo{
-		width = 1920,
-		height = 1080,
+		width = decoded_image.width,
+		height = decoded_image.height,
 		format = .R8G8B8A8_SRGB,
 		usage = {.TRANSFER_DST, .TRANSFER_SRC},
 		layout = .TRANSFER_SRC_OPTIMAL,
@@ -572,11 +608,11 @@ main :: proc() {
 	png_path := os.args[1]
 
 	fmt.println("Read PNG file")
-	pixel_data := read_png_file(png_path)
-	defer delete(pixel_data)
+	decoded_image := read_png_file(png_path)
+	defer delete(decoded_image.data)
 
 	fmt.println("Create present image")
-	create_present_image(&ctx, pixel_data)
+	create_present_image(&ctx, decoded_image)
 	defer {
 		vk.DestroyImage(ctx.logical_device, ctx.present_image, nil)
 		vk.FreeMemory(ctx.logical_device, ctx.present_image_memory, nil)
