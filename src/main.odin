@@ -1,5 +1,6 @@
 package main
 
+import "core:crypto/_weierstrass"
 import "base:intrinsics"
 import "core:math"
 import "core:c"
@@ -256,20 +257,20 @@ read_png_file :: proc(path: string, alloc := context.allocator) -> DecodedImageI
 	case 2:
 		for i in 0..<height {
 			for j in 0..<width {
-				for k in 0..<IMAGE_CHANNEL_SIZE {
-					if k == 3 {
-						normalized[i * width + j * IMAGE_CHANNEL_SIZE + k] = 255
-						continue
-					}
-					normalized[i * width + j * IMAGE_CHANNEL_SIZE + k] = unfiltered[i * row_bytes + j * channels + k]
-				}
+				src := i * row_bytes + j * 3
+				dst := (i * width + j) * 4
+
+				normalized[dst] = unfiltered[src]
+				normalized[dst + 1] = unfiltered[src + 1]
+				normalized[dst + 2] = unfiltered[src + 2]
+				normalized[dst + 3] = 255
 			}
 		}
 	case 6:
 		normalized = unfiltered
 	}
 
-	fmt.println(normalized[:13])
+	fmt.println(normalized[:width])
 
 	decoded_image := DecodedImageInfo{
 		data = normalized,
